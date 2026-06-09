@@ -21,6 +21,7 @@ public final class QuestUiService {
     private final VillageChiefPlugin plugin;
     private final QuestService questService;
     private final QuestGiverLocatorService questGiverLocatorService;
+    private final QuestMarkerService questMarkerService;
     private volatile boolean enabled;
     private final Map<UUID, BossBar> activeBars = new ConcurrentHashMap<>();
     private final BukkitTask refreshTask;
@@ -29,10 +30,12 @@ public final class QuestUiService {
             VillageChiefPlugin plugin,
             QuestService questService,
             QuestGiverLocatorService questGiverLocatorService,
+            QuestMarkerService questMarkerService,
             boolean enabled) {
         this.plugin = plugin;
         this.questService = questService;
         this.questGiverLocatorService = questGiverLocatorService;
+        this.questMarkerService = questMarkerService;
         this.enabled = enabled;
         this.refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshVisibleBars, 20L, 20L);
     }
@@ -67,6 +70,7 @@ public final class QuestUiService {
             return;
         }
 
+        questMarkerService.clear(playerUuid);
         BossBar existingBar = activeBars.remove(playerUuid);
         if (existingBar != null) {
             existingBar.removeAll();
@@ -94,9 +98,59 @@ public final class QuestUiService {
 
     private String buildTitle(Player player, Quest quest) {
         int visibleProgress = resolveVisibleProgress(player, quest);
+        String targetDetail = buildTargetDetail(player, quest);
         return "Quest: " + quest.title() + " (" + visibleProgress + "/" + quest.goal() + ")"
+                + targetDetail
                 + buildQuestGiverHint(player, quest)
                 + buildTurnInHint(quest);
+    }
+
+    private String buildTargetDetail(Player player, Quest quest) {
+        if (quest.progress() >= quest.goal()) {
+            return "";
+        }
+
+        if (quest.type() == QuestType.VISIT && quest.progress() < quest.goal()) {
+            return buildVisitTargetDetail(player, quest);
+        }
+
+        if (quest.type() == QuestType.EXPLORE && quest.progress() < quest.goal()) {
+            return buildExploreTargetDetail(player, quest);
+        }
+
+        if (quest.type() == QuestType.KILL && quest.progress() < quest.goal()) {
+            String mobName = quest.targetKey().toLowerCase(Locale.ROOT).replace('_', ' ');
+            return " | Ziel: " + mobName;
+        }
+
+        if (quest.type() == QuestType.BREED && quest.progress() < quest.goal()) {
+            String mobName = quest.targetKey().toLowerCase(Locale.ROOT).replace('_', ' ');
+            return " | Ziel: " + mobName;
+        }
+
+        return "";
+    }
+
+    private String buildVisitTargetDetail(Player player, Quest quest) {
+        QuestService.VisitRequirement requirement = questService.parseVisitRequirement(quest).orElse(null);
+        if (requirement == null || !requirement.worldName().equalsIgnoreCase(player.getWorld().getName())) {
+            return "";
+        }
+
+        Location targetLocation = new Location(player.getWorld(), requirement.targetX() + 0.5D, 64.0D, requirement.targetZ() + 0.5D);
+        int distance = (int) Math.round(player.getLocation().distance(targetLocation));
+        return " | Ziel: " + distance + "m entfernt";
+    }
+
+    private String buildExploreTargetDetail(Player player, Quest quest) {
+        QuestService.VisitRequirement requirement = questService.parseExploreRequirement(quest).orElse(null);
+        if (requirement == null || !requirement.worldName().equalsIgnoreCase(player.getWorld().getName())) {
+            return "";
+        }
+
+        Location targetLocation = new Location(player.getWorld(), requirement.targetX() + 0.5D, 64.0D, requirement.targetZ() + 0.5D);
+        int distance = (int) Math.round(player.getLocation().distance(targetLocation));
+        return " | Ziel: " + distance + "m entfernt";
     }
 
     private double resolveProgress(Player player, Quest quest) {
@@ -134,6 +188,14 @@ public final class QuestUiService {
     }
 
     private String buildQuestGiverHint(Player player, Quest quest) {
+        if (quest.type() == QuestType.SECURE && quest.progress() < quest.goal()) {
+            return buildSecureTargetHint(player, quest);
+        }
+
+        if (quest.type() == QuestType.EXPLORE && quest.progress() < quest.goal()) {
+            return buildExploreTargetHint(player, quest);
+        }
+
         if (quest.type() == QuestType.VISIT && quest.progress() < quest.goal()) {
             return " | Zielort offen";
         }
@@ -149,6 +211,54 @@ public final class QuestUiService {
         int distance = (int) Math.round(player.getLocation().distance(questGiverLocation));
         String direction = describeRelativeDirection(player.getLocation(), questGiverLocation);
         return " | " + questGiverLocatorService.resolveQuestGiverName(quest) + ": " + direction + " " + distance + "m";
+    }
+
+    private String buildSecureTargetHint(Player player, Quest quest) {
+        String[] parts = quest.targetKey().split(":", 5);
+        if (parts.length != 5) {
+            return " | Zielort offen";
+        }
+
+        String targetWorldName = parts[1];
+        int targetX;
+        int targetZ;
+        int radius;
+        try {
+            targetX = Integer.parseInt(parts[2]);
+            targetZ = Integer.parseInt(parts[3]);
+            radius = Integer.parseInt(parts[4]);
+        } catch (NumberFormatException exception) {
+            return " | Zielort offen";
+        }
+
+        if (!targetWorldName.equalsIgnoreCase(player.getWorld().getName())) {
+            return " | Zielort: andere Welt";
+        }
+
+        Location targetLocation = new Location(player.getWorld(), targetX + 0.5D, 64.0D, targetZ + 0.5D);
+        double deltaX = targetLocation.getX() - player.getLocation().getX();
+        double deltaZ = targetLocation.getZ() - player.getLocation().getZ();
+        int distance = (int) Math.round(Math.sqrt(deltaX * deltaX + deltaZ * deltaZ));
+        String direction = describeRelativeDirection(player.getLocation(), targetLocation);
+        return " | Zielort: " + direction + " " + distance + "m (Radius " + radius + ")";
+    }
+
+    private String buildExploreTargetHint(Player player, Quest quest) {
+        QuestService.VisitRequirement requirement = questService.parseExploreRequirement(quest).orElse(null);
+        if (requirement == null) {
+            return " | Zielort offen";
+        }
+
+        if (!requirement.worldName().equalsIgnoreCase(player.getWorld().getName())) {
+            return " | Zielort: andere Welt";
+        }
+
+        Location targetLocation = new Location(player.getWorld(), requirement.targetX() + 0.5D, 64.0D, requirement.targetZ() + 0.5D);
+        double deltaX = targetLocation.getX() - player.getLocation().getX();
+        double deltaZ = targetLocation.getZ() - player.getLocation().getZ();
+        int distance = (int) Math.round(Math.sqrt(deltaX * deltaX + deltaZ * deltaZ));
+        String direction = describeRelativeDirection(player.getLocation(), targetLocation);
+        return " | Zielort: " + direction + " " + distance + "m";
     }
 
     private String buildTurnInHint(Quest quest) {

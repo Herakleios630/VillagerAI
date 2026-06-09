@@ -423,7 +423,7 @@ public final class ChiefCommand implements TabExecutor {
         }
 
         if (args.length < 2) {
-            sender.sendMessage(Component.text("Verwendung: /chief quest <talk|fetch|deliver|repair|build|breed|brew|kill|visit|difficulty|cancel|list>", NamedTextColor.YELLOW));
+            sender.sendMessage(Component.text("Verwendung: /chief quest <talk|fetch|deliver|repair|build|breed|brew|kill|visit|explore|secure|difficulty|cancel|list>", NamedTextColor.YELLOW));
             return true;
         }
 
@@ -437,6 +437,8 @@ public final class ChiefCommand implements TabExecutor {
             case "brew" -> handleQuestBrew(player, args);
             case "kill" -> handleQuestKill(player, args);
             case "visit" -> handleQuestVisit(player, args);
+            case "explore" -> handleQuestExplore(player, args);
+            case "secure" -> handleQuestSecure(player, args);
             case "difficulty" -> handleQuestDifficulty(player, args);
             case "cancel" -> handleQuestCancel(player);
             case "list" -> handleQuestList(player);
@@ -890,6 +892,127 @@ public final class ChiefCommand implements TabExecutor {
         return true;
     }
 
+    private boolean handleQuestSecure(Player player, String[] args) {
+        if (args.length < 4) {
+            player.sendMessage(Component.text("Verwendung: /chief quest secure <material> <anzahl> [radius]", NamedTextColor.YELLOW));
+            return true;
+        }
+
+        Villager villager = EntityTargetingUtil.findTargetedVillager(player, plugin.getTargetRangeBlocks());
+        if (villager == null) {
+            player.sendMessage(Component.text("Du musst einen Villager ansehen.", NamedTextColor.RED));
+            return true;
+        }
+
+        Chief chief = chiefService.getConversationSpeaker(villager);
+        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), chief.chiefId());
+        if (!availability.allowed()) {
+            player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
+            return true;
+        }
+
+        Material material = Material.matchMaterial(args[2]);
+        if (material == null || material.isAir() || !material.isBlock()) {
+            player.sendMessage(Component.text("Das Ziel muss ein platzierbarer Block sein (z. B. TORCH).", NamedTextColor.RED));
+            return true;
+        }
+
+        int amount;
+        try {
+            amount = Integer.parseInt(args[3]);
+        } catch (NumberFormatException exception) {
+            player.sendMessage(Component.text("Die Anzahl muss eine Zahl sein.", NamedTextColor.RED));
+            return true;
+        }
+        if (amount <= 0) {
+            player.sendMessage(Component.text("Die Anzahl muss groesser als 0 sein.", NamedTextColor.RED));
+            return true;
+        }
+
+        int radius = 8;
+        if (args.length >= 5) {
+            try {
+                radius = Integer.parseInt(args[4]);
+            } catch (NumberFormatException exception) {
+                player.sendMessage(Component.text("Der Radius muss eine Zahl sein.", NamedTextColor.RED));
+                return true;
+            }
+        }
+        if (radius <= 0) {
+            player.sendMessage(Component.text("Der Radius muss groesser als 0 sein.", NamedTextColor.RED));
+            return true;
+        }
+
+        int baseX = (int) Math.round(chief.x());
+        int baseZ = (int) Math.round(chief.z());
+        int targetX = baseX + 30;
+        int targetZ = baseZ - 30;
+        Location location = player.getLocation();
+
+        Quest quest = questService.activateSecureQuest(
+                player.getUniqueId(),
+                chief,
+                material,
+                amount,
+                location.getWorld().getName(),
+                targetX,
+                targetZ,
+                radius);
+        questUiService.refresh(player);
+        player.sendMessage(Component.text("Sicherungs-Quest aktiviert: " + quest.title() + " (Radius " + radius + ")", NamedTextColor.GREEN));
+        return true;
+    }
+
+    private boolean handleQuestExplore(Player player, String[] args) {
+        if (args.length < 4) {
+            player.sendMessage(Component.text("Verwendung: /chief quest explore <x> <z> [radius]", NamedTextColor.YELLOW));
+            return true;
+        }
+
+        Villager villager = EntityTargetingUtil.findTargetedVillager(player, plugin.getTargetRangeBlocks());
+        if (villager == null) {
+            player.sendMessage(Component.text("Du musst einen Villager ansehen.", NamedTextColor.RED));
+            return true;
+        }
+
+        Chief chief = chiefService.getConversationSpeaker(villager);
+        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), chief.chiefId());
+        if (!availability.allowed()) {
+            player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
+            return true;
+        }
+
+        int targetX;
+        int targetZ;
+        int radius = 8;
+        try {
+            targetX = Integer.parseInt(args[2]);
+            targetZ = Integer.parseInt(args[3]);
+            if (args.length >= 5) {
+                radius = Integer.parseInt(args[4]);
+            }
+        } catch (NumberFormatException exception) {
+            player.sendMessage(Component.text("Koordinaten und Radius muessen Zahlen sein.", NamedTextColor.RED));
+            return true;
+        }
+        if (radius <= 0) {
+            player.sendMessage(Component.text("Der Radius muss groesser als 0 sein.", NamedTextColor.RED));
+            return true;
+        }
+
+        Location location = player.getLocation();
+        Quest quest = questService.activateExploreQuest(
+                player.getUniqueId(),
+                chief,
+                location.getWorld().getName(),
+                targetX,
+                targetZ,
+                radius);
+        questUiService.refresh(player);
+        player.sendMessage(Component.text("Erkundungs-Quest aktiviert: " + quest.title() + " (Radius " + radius + ")", NamedTextColor.GREEN));
+        return true;
+    }
+
     private boolean handleQuestVisit(Player player, String[] args) {
         if (args.length < 4) {
             player.sendMessage(Component.text(
@@ -982,7 +1105,7 @@ public final class ChiefCommand implements TabExecutor {
             return List.of("-100", "-50", "0", "50", "100");
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("quest")) {
-            return List.of("talk", "fetch", "deliver", "repair", "build", "breed", "brew", "kill", "visit", "difficulty", "cancel", "list");
+            return List.of("talk", "fetch", "deliver", "repair", "build", "breed", "brew", "kill", "visit", "explore", "secure", "difficulty", "cancel", "list");
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("quest") && args[1].equalsIgnoreCase("difficulty")) {
             return List.of("normal", "0", "1", "2", "3", "4");

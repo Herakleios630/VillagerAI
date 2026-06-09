@@ -268,6 +268,50 @@ public final class QuestService {
         return quest;
     }
 
+    public Quest activateSecureQuest(
+            UUID playerUuid,
+            Chief chief,
+            Material material,
+            int amount,
+            String worldName,
+            int targetX,
+            int targetZ,
+            int radius) {
+        return activateSecureQuest(playerUuid, chief, material, amount, worldName, targetX, targetZ, radius, 0);
+    }
+
+    public Quest activateSecureQuest(
+            UUID playerUuid,
+            Chief chief,
+            Material material,
+            int amount,
+            String worldName,
+            int targetX,
+            int targetZ,
+            int radius,
+            int difficultyTier) {
+        long now = System.currentTimeMillis();
+        Quest quest = new Quest(
+                createQuestId(),
+                playerUuid,
+                chief.chiefId(),
+                chief.villageId(),
+                Math.max(0, difficultyTier),
+                QuestType.SECURE,
+                "Sichere mit " + amount + " " + formatMaterial(material),
+                "Platziere " + amount + " " + formatMaterial(material)
+                        + " bei X " + targetX + " / Z " + targetZ
+                        + " und melde dich danach bei " + chief.chatName() + ".",
+                material.name() + ":" + worldName + ":" + targetX + ":" + targetZ + ":" + radius,
+                amount,
+                0,
+                QuestStatus.ACTIVE,
+                now,
+                now);
+        questRepository.saveQuest(quest);
+        return quest;
+    }
+
     public Optional<Quest> acceptQuest(String questId) {
         return questRepository.findByQuestId(questId)
                 .map(existingQuest -> existingQuest.withStatus(QuestStatus.ACTIVE, System.currentTimeMillis()))
@@ -344,10 +388,10 @@ public final class QuestService {
                     "Du hast bereits eine aktive Quest: " + activeQuest.get().title() + ". Brich sie erst ab oder schliesse sie ab.");
         }
 
-        Optional<Quest> latestQuest = findLatestQuestForChief(playerUuid, chiefId)
+        Optional<Quest> latestCompletedQuest = findLatestQuestForChief(playerUuid, chiefId)
                 .filter(quest -> quest.status() == QuestStatus.COMPLETED);
-        if (latestQuest.isPresent() && talkQuestCooldownMillis > 0L) {
-            long elapsedMillis = System.currentTimeMillis() - latestQuest.get().updatedAtEpochMillis();
+        if (latestCompletedQuest.isPresent() && talkQuestCooldownMillis > 0L) {
+            long elapsedMillis = System.currentTimeMillis() - latestCompletedQuest.get().updatedAtEpochMillis();
             if (elapsedMillis < talkQuestCooldownMillis) {
                 long remainingSeconds = Math.max(1L, (talkQuestCooldownMillis - elapsedMillis + 999L) / 1000L);
                 return new TalkQuestAvailability(
@@ -356,6 +400,23 @@ public final class QuestService {
                     null,
                     remainingSeconds,
                         "Dieser Questgeber hat gerade keine neue Aufgabe fuer dich. Versuch es in "
+                                + remainingSeconds + " Sekunden noch einmal.");
+            }
+        }
+
+        long cancelCooldownMillis = talkQuestCooldownMillis / 5L;
+        Optional<Quest> latestCancelledQuest = findLatestQuestForChief(playerUuid, chiefId)
+                .filter(quest -> quest.status() == QuestStatus.CANCELLED);
+        if (latestCancelledQuest.isPresent() && cancelCooldownMillis > 0L) {
+            long elapsedMillis = System.currentTimeMillis() - latestCancelledQuest.get().updatedAtEpochMillis();
+            if (elapsedMillis < cancelCooldownMillis) {
+                long remainingSeconds = Math.max(1L, (cancelCooldownMillis - elapsedMillis + 999L) / 1000L);
+                return new TalkQuestAvailability(
+                        false,
+                    QuestAvailabilityFailureReason.COOLDOWN,
+                    null,
+                    remainingSeconds,
+                        "Du hast gerade erst einen Auftrag abgebrochen. Versuch es in "
                                 + remainingSeconds + " Sekunden noch einmal.");
             }
         }
@@ -507,6 +568,7 @@ public final class QuestService {
     public Collection<Quest> completeReadyInteractionQuests(UUID playerUuid, String chiefId) {
         long now = System.currentTimeMillis();
         Collection<Quest> completedQuests = new ArrayList<>();
+        Optional<Quest> activeQuest = findActiveQuest(playerUuid);
         for (Quest quest : questRepository.findByPlayerUuid(playerUuid)) {
             if (quest.status() != QuestStatus.ACTIVE
                     || !quest.chiefId().equals(chiefId)
@@ -518,6 +580,10 @@ public final class QuestService {
                     || quest.type() == QuestType.DELIVER
                     || quest.type() == QuestType.REPAIR
                     || quest.type() == QuestType.BREW) {
+                continue;
+            }
+
+            if (activeQuest.isEmpty() || !activeQuest.get().questId().equals(quest.questId())) {
                 continue;
             }
 
@@ -637,6 +703,129 @@ public final class QuestService {
         return updates;
     }
 
+    public Quest activateExploreQuest(
+            UUID playerUuid,
+            Chief chief,
+            String worldName,
+            int targetX,
+            int targetZ,
+            int radius) {
+        return activateExploreQuest(playerUuid, chief, worldName, targetX, targetZ, radius, 0);
+    }
+
+    public Quest activateExploreQuest(
+            UUID playerUuid,
+            Chief chief,
+            String worldName,
+            int targetX,
+            int targetZ,
+            int radius,
+            int difficultyTier) {
+        long now = System.currentTimeMillis();
+        Quest quest = new Quest(
+                createQuestId(),
+                playerUuid,
+                chief.chiefId(),
+                chief.villageId(),
+                Math.max(0, difficultyTier),
+                QuestType.EXPLORE,
+                "Erkunde X " + targetX + " / Z " + targetZ,
+                "Erreiche den Ort bei X " + targetX + " / Z " + targetZ + " und melde dich danach bei "
+                        + chief.chatName() + ".",
+                worldName + ":" + targetX + ":" + targetZ + ":" + radius,
+                1,
+                0,
+                QuestStatus.ACTIVE,
+                now,
+                now);
+        questRepository.saveQuest(quest);
+        return quest;
+    }
+
+    public Collection<ExploreQuestUpdate> advanceExploreQuests(Player player, Location location) {
+        long now = System.currentTimeMillis();
+        Collection<ExploreQuestUpdate> updates = new ArrayList<>();
+        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+            if (quest.type() != QuestType.EXPLORE || quest.status() != QuestStatus.ACTIVE || quest.progress() >= quest.goal()) {
+                continue;
+            }
+
+            VisitRequirement requirement = parseExploreRequirement(quest).orElse(null);
+            if (requirement == null || !requirement.worldName().equalsIgnoreCase(location.getWorld().getName())) {
+                continue;
+            }
+
+            int deltaX = location.getBlockX() - requirement.targetX();
+            int deltaZ = location.getBlockZ() - requirement.targetZ();
+            double horizontalDistanceSquared = (double) deltaX * deltaX + (double) deltaZ * deltaZ;
+            if (horizontalDistanceSquared > (double) requirement.radius() * requirement.radius()) {
+                continue;
+            }
+
+            Quest updatedQuest = quest.withProgress(quest.goal(), now);
+            questRepository.saveQuest(updatedQuest);
+            updates.add(new ExploreQuestUpdate(updatedQuest, requirement));
+        }
+        return updates;
+    }
+
+    public Optional<VisitRequirement> parseExploreRequirement(Quest quest) {
+        if (quest.type() != QuestType.EXPLORE) {
+            return Optional.empty();
+        }
+
+        String[] parts = quest.targetKey().split(":", 4);
+        if (parts.length != 4) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(new VisitRequirement(
+                    parts[0],
+                    Integer.parseInt(parts[1]),
+                    Integer.parseInt(parts[2]),
+                    Integer.parseInt(parts[3])));
+        } catch (NumberFormatException exception) {
+            return Optional.empty();
+        }
+    }
+
+    public Collection<SecureQuestUpdate> advanceSecureQuests(Player player, Material placedMaterial, Location placedLocation) {
+        long now = System.currentTimeMillis();
+        Collection<SecureQuestUpdate> updates = new ArrayList<>();
+        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+            if (quest.type() != QuestType.SECURE || quest.status() != QuestStatus.ACTIVE) {
+                continue;
+            }
+
+            SecureRequirement requirement = parseSecureRequirement(quest).orElse(null);
+            if (requirement == null) {
+                continue;
+            }
+
+            if (requirement.material() != placedMaterial) {
+                continue;
+            }
+
+            if (!requirement.worldName().equalsIgnoreCase(placedLocation.getWorld().getName())) {
+                continue;
+            }
+
+            int deltaX = placedLocation.getBlockX() - requirement.targetX();
+            int deltaZ = placedLocation.getBlockZ() - requirement.targetZ();
+            double horizontalDistanceSquared = (double) deltaX * deltaX + (double) deltaZ * deltaZ;
+            if (horizontalDistanceSquared > (double) requirement.radius() * requirement.radius()) {
+                continue;
+            }
+
+            int newProgress = Math.min(quest.goal(), quest.progress() + 1);
+            Quest updatedQuest = quest.withProgress(newProgress, now);
+            questRepository.saveQuest(updatedQuest);
+            updates.add(new SecureQuestUpdate(updatedQuest, newProgress >= quest.goal()));
+        }
+        return updates;
+    }
+
     public Optional<DeliveryRequirement> parseDeliveryRequirement(Quest quest) {
         if (quest.type() != QuestType.DELIVER) {
             return Optional.empty();
@@ -749,6 +938,33 @@ public final class QuestService {
                     Integer.parseInt(parts[1]),
                     Integer.parseInt(parts[2]),
                     Integer.parseInt(parts[3])));
+        } catch (NumberFormatException exception) {
+            return Optional.empty();
+        }
+    }
+
+    public Optional<SecureRequirement> parseSecureRequirement(Quest quest) {
+        if (quest.type() != QuestType.SECURE) {
+            return Optional.empty();
+        }
+
+        String[] parts = quest.targetKey().split(":", 5);
+        if (parts.length != 5) {
+            return Optional.empty();
+        }
+
+        Material material = Material.matchMaterial(parts[0]);
+        if (material == null) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(new SecureRequirement(
+                    material,
+                    parts[1],
+                    Integer.parseInt(parts[2]),
+                    Integer.parseInt(parts[3]),
+                    Integer.parseInt(parts[4])));
         } catch (NumberFormatException exception) {
             return Optional.empty();
         }
@@ -872,6 +1088,9 @@ public final class QuestService {
     public record FetchRequirement(Material material, int amount) {
     }
 
+    public record SecureRequirement(Material material, String worldName, int targetX, int targetZ, int radius) {
+    }
+
     public record DeliverQuestUpdate(Quest quest, int handedInAmount, boolean completed) {
     }
 
@@ -888,6 +1107,12 @@ public final class QuestService {
     }
 
     public record BreedQuestUpdate(Quest quest, boolean readyToTurnIn) {
+    }
+
+    public record SecureQuestUpdate(Quest quest, boolean readyToTurnIn) {
+    }
+
+    public record ExploreQuestUpdate(Quest quest, VisitRequirement requirement) {
     }
 
     public record VisitRequirement(String worldName, int targetX, int targetZ, int radius) {

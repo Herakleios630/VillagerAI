@@ -9,5 +9,7 @@ public enum QuestType {
     BUILD,
     BREED,
     VISIT,
-    TALK
+    TALK,
+    SECURE,
+    EXPLORE
 }

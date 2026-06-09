@@ -19,6 +19,7 @@ import de.ajsch.villagerai.service.QuestService;
 import de.ajsch.villagerai.service.QuestRewardService;
 import de.ajsch.villagerai.service.QuestUiService;
 import de.ajsch.villagerai.service.QuestGiverLocatorService;
+import de.ajsch.villagerai.service.QuestMarkerService;
 import de.ajsch.villagerai.service.QuestOfferService;
 import de.ajsch.villagerai.service.ReputationService;
 import de.ajsch.villagerai.service.VillageIdentityService;
@@ -49,6 +50,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.bukkit.Bukkit;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.PluginManager;
@@ -70,13 +73,15 @@ public final class VillageChiefPlugin extends JavaPlugin {
     private QuestDifficultyService questDifficultyService;
     private QuestOfferService questOfferService;
     private QuestRewardService questRewardService;
-    private QuestUiService questUiService;
+        private QuestUiService questUiService;
+    private QuestMarkerService questMarkerService;
     private QuestGiverLocatorService questGiverLocatorService;
     private ReputationService reputationService;
     private VillagerDebugOverlayService villagerDebugOverlayService;
     private VillagerTradeService villagerTradeService;
-    private AIService aiService;
+        private AIService aiService;
     private ConversationService conversationService;
+    private BukkitTask villagerRecoveryTask;
     private VillagerConfinementService villagerConfinementService;
     private VillagerContextService villagerContextService;
     private VillageIdentityService villageIdentityService;
@@ -121,14 +126,24 @@ public final class VillageChiefPlugin extends JavaPlugin {
             questService,
             questDifficultyService,
             dataLoader.loadQuestOfferTemplatesSection());
-        this.questGiverLocatorService = new QuestGiverLocatorService(chiefService, villagerProfileRepository);
+                this.questGiverLocatorService = new QuestGiverLocatorService(chiefService, villagerProfileRepository);
         this.questRewardService = new QuestRewardService(
             dataLoader.loadQuestRewardDefinitions(),
             dataLoader.loadRewardScalingSettings());
+                this.questMarkerService = new QuestMarkerService(
+            this,
+            questService,
+            questGiverLocatorService,
+            dataLoader.questMarkersEnabled(),
+            dataLoader.questMarkerActiveSymbol(),
+            dataLoader.questMarkerReadySymbol(),
+            dataLoader.questMarkerHeightAboveHead());
+        this.questMarkerService.start();
         this.questUiService = new QuestUiService(
             this,
             questService,
             questGiverLocatorService,
+            questMarkerService,
             dataLoader.questUiEnabled());
         this.reputationService = new ReputationService(reputationRepository);
         this.villagerTradeService = new VillagerTradeService(
@@ -180,7 +195,11 @@ public final class VillageChiefPlugin extends JavaPlugin {
             villageIdentityService);
 
         registerListeners();
-        registerCommands();
+                registerCommands();
+
+        // Villager-AI-Recovery: alle 30 Sekunden eingefrorene Villager wiederbeleben
+        this.villagerRecoveryTask = Bukkit.getScheduler().runTaskTimer(this,
+            () -> conversationService.recoverAllVillagers(), 20L, 600L);
 
         getLogger().info("VillagerAI enabled using AI provider: " + aiService.getName());
         getLogger().info("Quest service ready with repository: " + questRepository.getClass().getSimpleName());
@@ -192,8 +211,16 @@ public final class VillageChiefPlugin extends JavaPlugin {
             conversationService.shutdown();
         }
 
-        if (questUiService != null) {
+                if (questUiService != null) {
             questUiService.shutdown();
+        }
+
+        if (questMarkerService != null) {
+            questMarkerService.shutdown();
+        }
+
+        if (villagerRecoveryTask != null) {
+            villagerRecoveryTask.cancel();
         }
 
         if (villagerDebugOverlayService != null) {
@@ -276,8 +303,16 @@ public final class VillageChiefPlugin extends JavaPlugin {
     }
 
     public List<String> reloadRuntimeConfiguration(CommandSender sender) {
-        reloadConfig();
-        chiefService.reloadProfiles(dataLoader.loadChiefProfilesSection());
+            reloadConfig();
+
+            if (!getConfig().getBoolean("interaction.allow-regular-villager-conversations", true)) {
+                getLogger().warning("interaction.allow-regular-villager-conversations ist FALSE - Spieler koennen nur mit per /chief set markierten Villagern sprechen!");
+                if (sender != null) {
+                    sender.sendMessage("§e[VillageChiefAI] WARNUNG: allow-regular-villager-conversations ist deaktiviert. Normale Villager koennen nicht angesprochen werden.");
+                }
+            }
+
+            chiefService.reloadProfiles(dataLoader.loadChiefProfilesSection());
         int refreshedVillagerProfiles = refreshLoadedVillagerProfiles();
         questService.reloadTalkQuestCooldown(dataLoader.questTalkCooldownSeconds());
         questDifficultyService.reloadSettings(dataLoader.loadQuestDifficultySettings());

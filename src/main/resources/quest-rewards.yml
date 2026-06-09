@@ -118,3 +118,53 @@ rewards:
           - efficiency
           - fortune
           - unbreaking
+  secure:
+    experience-points: 10
+    emeralds: 2
+    bonus-items:
+      - material: TORCH
+        amount: 8
+        quality-tiers:
+          - LANTERN
+          - SOUL_LANTERN
+      - reward-type: RANDOM_ENCHANTED_BOOK
+        amount: 1
+        enchantments:
+          - efficiency
+          - fortune
+          - unbreaking
+  explore:
+    experience-points: 12
+    emeralds: 2
+    bonus-items:
+      - material: MAP
+        amount: 1
+        quality-tiers:
+          - FILLED_MAP
+          - MAP
+      - material: COMPASS
+        amount: 1
+        quality-tiers:
+          - COMPASS
+          - RECOVERY_COMPASS
+      - reward-type: RANDOM_ENCHANTED_BOOK
+        amount: 1
+        enchantments:
+          - efficiency
+          - fortune
+          - unbreaking
+  secure:
+    experience-points: 10
+    emeralds: 2
+    bonus-items:
+      - material: TORCH
+        amount: 8
+        quality-tiers:
+          - LANTERN
+          - SOUL_LANTERN
+      - reward-type: RANDOM_ENCHANTED_BOOK
+        amount: 1
+        enchantments:
+          - efficiency
+          - fortune
+          - unbreaking

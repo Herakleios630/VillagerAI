@@ -63,20 +63,20 @@ offer-templates:
       amount: 8
       intro: "Ein paar neue Buecher waeren nuetzlich."
   CARTOGRAPHER:
-    - type: VISIT
+    - type: EXPLORE
       distance: 96
       radius: 5
       intro: "Ich brauche einen Blick auf die Umgebung."
-    - type: VISIT
+    - type: EXPLORE
       distance: 128
       radius: 6
       intro: "Sieh dich an einem entfernteren Punkt fuer mich um."
-    - type: VISIT
+    - type: EXPLORE
       distance: 224
       radius: 8
       difficulty-tier: 2
       intro: "Diesmal brauche ich eine deutlich weitere Erkundung."
-    - type: VISIT
+    - type: EXPLORE
       distance: 640
       radius: 12
       difficulty-tier: 4

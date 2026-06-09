@@ -2,6 +2,8 @@ package de.ajsch.villagerai.listener;
 
 import de.ajsch.villagerai.service.ChiefService;
 import de.ajsch.villagerai.service.ConversationService;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.entity.Villager;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -38,6 +40,9 @@ public final class VillagerInteractListener implements Listener {
         }
 
         if (requireSneakForRegularVillagers && !event.getPlayer().isSneaking()) {
+            event.getPlayer().sendActionBar(
+                    Component.text("Halte Shift gedrueckt, um mit diesem Dorfbewohner zu sprechen.",
+                            NamedTextColor.GRAY));
             return;
         }
 
