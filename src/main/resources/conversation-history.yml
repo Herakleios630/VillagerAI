@@ -1,0 +1,16 @@
+histories: {}
+# Example structure:
+# histories:
+#   player-uuid:
+#     chief-1234abcd:
+#       player-uuid: 00000000-0000-0000-0000-000000000000
+#       chief-id: chief-1234abcd
+#       village-id: world:12:8
+#       updated-at-epoch-millis: 0
+#       turns:
+#         - role: player
+#           message: Hallo Haeuptling
+#           timestamp-epoch-millis: 0
+#         - role: chief
+#           message: Willkommen in Eichenhain.
+#           timestamp-epoch-millis: 0

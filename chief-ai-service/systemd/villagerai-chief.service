@@ -1,0 +1,15 @@
+[Unit]
+Description=VillagerAI Chief HTTP Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/villagerai/chief-ai-service
+ExecStart=/usr/bin/python3 /opt/villagerai/chief-ai-service/server.py
+Restart=on-failure
+RestartSec=5
+User=minecraft
+Group=minecraft
+
+[Install]
+WantedBy=multi-user.target

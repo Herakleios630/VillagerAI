@@ -1,0 +1,17 @@
+name: VillagerAI
+version: ${version}
+main: de.ajsch.villagerai.VillageChiefPlugin
+api-version: '1.21'
+authors: [ajsch]
+description: Village chief AI MVP for Paper.
+
+commands:
+  chief:
+    description: Manage village chiefs and active conversations.
+    usage: /chief <set|unset|info|exit|debug|quest|reload>
+    permission: villagerai.chief
+
+permissions:
+  villagerai.chief:
+    description: Allows chief administration commands.
+    default: op

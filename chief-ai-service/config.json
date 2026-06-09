@@ -1,0 +1,25 @@
+{
+  "host": "127.0.0.1",
+  "port": 8080,
+  "provider": "deepseek",
+  "village_name": "Eichenhain",
+  "reply_prefix": "Der Haeuptling sagt",
+  "ollama": {
+    "endpoint": "http://127.0.0.1:11434/api/generate",
+    "model": "qwen2.5:3b",
+    "timeout_seconds": 60,
+    "repeat_penalty": 1.2,
+    "system_prompt": "Du bist der Haeuptling des Dorfes Eichenhain in Minecraft. Antworte auf Deutsch, kurz, freundlich und glaubwuerdig. Sprich wie eine Figur in der Welt, nicht wie ein Assistent."
+  },
+  "deepseek": {
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-chat",
+    "timeout_seconds": 60,
+    "temperature": 0.55,
+    "top_p": 0.9,
+    "max_tokens": 120,
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "api_key": "",
+    "system_prompt": "Du bist ein glaubwuerdiger Sprecher in einem Minecraft-Dorf. Antworte passend zur Rolle, kurz und natuerlich auf Deutsch."
+  }
+}

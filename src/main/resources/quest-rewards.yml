@@ -1,0 +1,120 @@
+rewards:
+  talk:
+    experience-points: 5
+    emeralds: 1
+    bonus-items:
+      - material: BREAD
+        amount: 2
+        quality-tiers:
+          - COOKED_BEEF
+          - GOLDEN_CARROT
+  fetch:
+    experience-points: 8
+    emeralds: 1
+    bonus-items:
+      - material: APPLE
+        amount: 3
+        quality-tiers:
+          - BREAD
+          - GOLDEN_CARROT
+      - material: BREAD
+        amount: 1
+        quality-tiers:
+          - COOKED_BEEF
+          - PUMPKIN_PIE
+  deliver:
+    experience-points: 10
+    emeralds: 2
+    bonus-items:
+      - material: COOKED_BEEF
+        amount: 2
+        quality-tiers:
+          - GOLDEN_CARROT
+          - RABBIT_STEW
+      - reward-type: RANDOM_ENCHANTED_BOOK
+        amount: 1
+        enchantments:
+          - mending
+          - unbreaking
+          - protection
+  repair:
+    experience-points: 10
+    emeralds: 2
+    bonus-items:
+      - material: IRON_INGOT
+        amount: 3
+        quality-tiers:
+          - CHAIN
+          - LANTERN
+  build:
+    experience-points: 11
+    emeralds: 2
+    bonus-items:
+      - material: STONE_BRICKS
+        amount: 8
+        quality-tiers:
+          - COBBLESTONE
+          - BRICKS
+      - reward-type: RANDOM_ENCHANTED_BOOK
+        amount: 1
+        enchantments:
+          - efficiency
+          - unbreaking
+          - mending
+  breed:
+    experience-points: 11
+    emeralds: 2
+    bonus-items:
+      - material: HAY_BLOCK
+        amount: 3
+        quality-tiers:
+          - WHEAT
+          - CARROT
+      - reward-type: RANDOM_ENCHANTED_BOOK
+        amount: 1
+        enchantments:
+          - looting
+          - fortune
+          - unbreaking
+  brew:
+    experience-points: 12
+    emeralds: 2
+    bonus-items:
+      - material: GLASS_BOTTLE
+        amount: 4
+        quality-tiers:
+          - GLOWSTONE_DUST
+          - REDSTONE
+  kill:
+    experience-points: 12
+    emeralds: 2
+    bonus-items:
+      - material: ARROW
+        amount: 8
+        quality-tiers:
+          - SPECTRAL_ARROW
+      - material: TORCH
+        amount: 4
+        quality-tiers:
+          - LANTERN
+      - reward-type: RANDOM_ENCHANTED_BOOK
+        amount: 1
+        enchantments:
+          - sharpness
+          - power
+          - looting
+  visit:
+    experience-points: 8
+    emeralds: 1
+    bonus-items:
+      - material: TORCH
+        amount: 8
+        quality-tiers:
+          - LANTERN
+          - SOUL_LANTERN
+      - reward-type: RANDOM_ENCHANTED_BOOK
+        amount: 1
+        enchantments:
+          - efficiency
+          - fortune
+          - unbreaking

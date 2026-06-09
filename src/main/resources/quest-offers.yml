@@ -1,0 +1,186 @@
+offer-templates:
+  DEFAULT:
+    - type: FETCH
+      material: BREAD
+      amount: 8
+      intro: "Ein wenig Proviant waere hilfreich."
+    - type: FETCH
+      material: CARROT
+      amount: 12
+      intro: "Das Dorf kann etwas Nachschub gebrauchen."
+  FARMER:
+    - type: FETCH
+      material: WHEAT
+      amount: 16
+      intro: "Mir fehlt Weizen fuer das Dorf."
+    - type: FETCH
+      material: WHEAT
+      amount: 32
+      difficulty-tier: 1
+      intro: "Wenn du mehr schaffen willst: Die Vorratsscheune ist fast leer."
+    - type: FETCH
+      material: POTATO
+      amount: 20
+      intro: "Die Felder brauchen neue Vorratsbloecke."
+  BUTCHER:
+    - type: FETCH
+      material: PORKCHOP
+      amount: 12
+      intro: "Die Vorratskisten sind fast leer."
+    - type: FETCH
+      material: BEEF
+      amount: 12
+      intro: "Mir fehlt Fleisch fuer die naechsten Tage."
+  FISHERMAN:
+    - type: FETCH
+      material: COD
+      amount: 10
+      intro: "Ich koennte frischen Fang gebrauchen."
+    - type: FETCH
+      material: SALMON
+      amount: 10
+      intro: "Etwas Lachs waere mir lieber als leere Haende."
+  SHEPHERD:
+    - type: FETCH
+      material: WHITE_WOOL
+      amount: 12
+      intro: "Mir fehlt Wolle fuer meine Arbeit."
+    - type: FETCH
+      material: BLACK_WOOL
+      amount: 8
+      intro: "Ich brauche noch Wolle fuer die Werkbank."
+    - type: BREED
+      entity-type: SHEEP
+      amount: 6
+      intro: "Unsere Herde muss wachsen. Kannst du fuer Nachwuchs sorgen?"
+  LIBRARIAN:
+    - type: FETCH
+      material: PAPER
+      amount: 12
+      intro: "Ich brauche Material fuer meine Aufzeichnungen."
+    - type: FETCH
+      material: BOOK
+      amount: 8
+      intro: "Ein paar neue Buecher waeren nuetzlich."
+  CARTOGRAPHER:
+    - type: VISIT
+      distance: 96
+      radius: 5
+      intro: "Ich brauche einen Blick auf die Umgebung."
+    - type: VISIT
+      distance: 128
+      radius: 6
+      intro: "Sieh dich an einem entfernteren Punkt fuer mich um."
+    - type: VISIT
+      distance: 224
+      radius: 8
+      difficulty-tier: 2
+      intro: "Diesmal brauche ich eine deutlich weitere Erkundung."
+    - type: VISIT
+      distance: 640
+      radius: 12
+      difficulty-tier: 4
+      intro: "Legendarer Auftrag: Kartiere die fernsten Grenzgebiete und kehre lebend zurueck."
+  CLERIC:
+    - type: BREW
+      potion-type: HEALING
+      amount: 2
+      intro: "Mir fehlen Heilmittel fuer die Verletzten im Dorf."
+    - type: BREW
+      potion-type: REGENERATION
+      amount: 1
+      intro: "Ich brauche einen staerkeren Trank fuer einen heiklen Fall."
+    - type: KILL
+      entity-type: ZOMBIE
+      amount: 4
+      intro: "In der Naehe treiben sich gefaehrliche Kreaturen herum."
+    - type: KILL
+      entity-type: SKELETON
+      amount: 8
+      difficulty-tier: 1
+      intro: "Wenn du standhaft bist: Weiter draussen treiben sich mehr Untote herum."
+    - type: KILL
+      entity-type: SKELETON
+      amount: 5
+      intro: "Untote stoeren hier die Ruhe."
+    - type: KILL
+      entity-type: ENDER_DRAGON
+      amount: 1
+      difficulty-tier: 4
+      intro: "Legendarer Auftrag: Besiege den Enderdrachen, damit das Dorf endlich aufatmen kann."
+  ARMORER:
+    - type: FETCH
+      material: IRON_INGOT
+      amount: 10
+      intro: "Mir fehlt Nachschub fuer die Schmiede."
+    - type: REPAIR
+      material: IRON_INGOT
+      amount: 8
+      intro: "Die Ruestungsstaender sind beschaedigt. Ich brauche Material fuer Reparaturen."
+    - type: FETCH
+      material: COAL
+      amount: 16
+      intro: "Ohne Kohle bleibt der Ofen kalt."
+  TOOLSMITH:
+    - type: FETCH
+      material: IRON_INGOT
+      amount: 10
+      intro: "Mir fehlt Nachschub fuer die Schmiede."
+    - type: FETCH
+      material: COAL
+      amount: 16
+      intro: "Ohne Kohle bleibt der Ofen kalt."
+    - type: REPAIR
+      material: STICK
+      amount: 12
+      intro: "Einige Werkzeuge brechen uns weg. Ich brauche Material fuer schnelle Reparaturen."
+  WEAPONSMITH:
+    - type: FETCH
+      material: IRON_INGOT
+      amount: 10
+      intro: "Mir fehlt Nachschub fuer die Schmiede."
+    - type: FETCH
+      material: COAL
+      amount: 16
+      intro: "Ohne Kohle bleibt der Ofen kalt."
+    - type: KILL
+      entity-type: BLAZE
+      amount: 16
+      difficulty-tier: 4
+      intro: "Legendarer Auftrag: Bring mir Lohenstaebe aus dem Nether, die wir fuer Grosses brauchen."
+    - type: FETCH
+      material: ELYTRA
+      amount: 1
+      difficulty-tier: 4
+      intro: "Legendarer Auftrag: Besorge eine seltene End-Beute fuer unser Dorf."
+  MASON:
+    - type: FETCH
+      material: COBBLESTONE
+      amount: 24
+      intro: "Ich brauche mehr Stein fuer meine Arbeit."
+    - type: BUILD
+      material: STONE_BRICKS
+      amount: 20
+      intro: "Setze ein paar neue Steinziegel fuer die Dorfbefestigung."
+    - type: FETCH
+      material: STONE
+      amount: 24
+      intro: "Bring mir festen Stein fuer den Bau."
+  FLETCHER:
+    - type: FETCH
+      material: FEATHER
+      amount: 12
+      intro: "Mir fehlen Materialien fuer neue Pfeile."
+    - type: FETCH
+      material: FLINT
+      amount: 12
+      intro: "Ich brauche Feuerstein fuer brauchbare Spitzen."
+  LEATHERWORKER:
+    - type: FETCH
+      material: LEATHER
+      amount: 10
+      intro: "Ich koennte etwas Leder gebrauchen."
+    - type: FETCH
+      material: RABBIT_HIDE
+      amount: 6
+      intro: "Mir fehlen Hasenfelle fuer feine Arbeit."

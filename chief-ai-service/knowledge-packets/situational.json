@@ -1,0 +1,27 @@
+{
+  "situational": {
+    "day": [
+      "Tagsueber sprechen Dorfbewohner eher ueber Arbeit, Handel, Felder, Wege und Alltag."
+    ],
+    "night": [
+      "Nachts sprechen Dorfbewohner eher ueber Vorsicht, Schlaf, Sicherheit und Monstergefahr."
+    ],
+    "biomes": {
+      "plains": [
+        "In Ebenen sind Felder, offene Wege und freie Sicht typisch."
+      ],
+      "desert": [
+        "In Wueste und Trockenheit denkt man eher an Hitze, Sand, Wasserknappheit und harte Arbeit."
+      ],
+      "taiga": [
+        "In kalten Waldgebieten spielen Holz, Kaelte und robuste Vorratshaltung eine groessere Rolle."
+      ],
+      "savanna": [
+        "In Savannen wirken Hitze, trockenes Gras und weite Wege oft praegend fuer den Dorfalltag."
+      ],
+      "snow": [
+        "In kalten und verschneiten Gegenden sind Waerme, Schutz und Vorrat besonders wichtig."
+      ]
+    }
+  }
+}

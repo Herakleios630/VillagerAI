@@ -1,0 +1,10 @@
+.gradle/
+build/
+out/
+run/
+.vscode/
+.continue/
+game-memory.db
+*.log
+__pycache__/
+*.pyc

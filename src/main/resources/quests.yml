@@ -1,0 +1,16 @@
+quests: {}
+# Example structure:
+# quests:
+#   quest-1234abcd:
+#     player-uuid: 00000000-0000-0000-0000-000000000000
+#     chief-id: chief-1234abcd
+#     village-id: world:12:8
+#     type: talk
+#     title: Sprich mit dem Haeuptling
+#     description: Melde dich beim Haeuptling von Eichenhain.
+#     target-key: chief-1234abcd
+#     goal: 1
+#     progress: 0
+#     status: offered
+#     created-at-epoch-millis: 0
+#     updated-at-epoch-millis: 0

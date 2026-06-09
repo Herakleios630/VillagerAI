@@ -1,0 +1,122 @@
+conversation:
+  timeout-seconds: 120
+  check-interval-seconds: 15
+  quest-cooldown-dialog:
+    minutes-threshold-seconds: 120
+  quest-offers:
+    spontaneous-chance: 0.18
+    spontaneous-cooldown-seconds: 180
+    spontaneous-decline-cooldown-seconds: 600
+    spontaneous-min-combined-reputation: -5
+    friendly-intro-min-combined-reputation: 15
+  busy:
+    waiting-message: "Der Villager denkt noch ueber deine letzte Frage nach."
+    chief-busy-message: "Der Villager ist gerade in ein anderes Gespraech vertieft. Versuch es gleich noch einmal."
+    queue-full-message: "Im Dorf ist gerade viel los. Versuch es in einem Moment noch einmal."
+  history:
+    max-turns-per-player-chief: 20
+    context-turns-limit: 8
+  repeat-guard:
+    recent-chief-replies-limit: 3
+    low-health-threshold: 0.7
+
+interaction:
+  target-range-blocks: 6.0
+  allow-regular-villager-conversations: true
+  regular-villager-conversations-require-sneak: true
+
+ai:
+  provider: http
+  max-concurrent-requests: 2
+  dummy-prefix: "Der Haeuptling sagt"
+  http:
+    endpoint: "http://127.0.0.1:8080/v1/chief/reply"
+    health-endpoint: "http://127.0.0.1:8080/health"
+    connect-timeout-millis: 3000
+    request-timeout-millis: 30000
+    system-prompt: "Du bist ein glaubwuerdiger Sprecher in einem Minecraft-Dorf. Antworte passend zur Rolle, kurz und natuerlich auf Deutsch."
+
+quests:
+  talk:
+    cooldown-seconds: 300
+  difficulty:
+    enabled: true
+    unlock-scores:
+      - 25
+      - 50
+      - 75
+      - 100
+    challenge-offers:
+      enabled: true
+      chance: 0.2
+      cooldown-seconds: 900
+    legendary:
+      enabled: true
+      tier: 4
+      require-nether-access: true
+      require-end-access: true
+      require-dragon-kill: true
+      cooldown-seconds: 7200
+  rewards:
+    reputation:
+      enabled: true
+      village-quality-start-score: 20
+      village-quality-max-score: 100
+      village-quality-max-tier-bonus: 2
+      speaker-quantity-min-score: -100
+      speaker-quantity-max-score: 100
+      speaker-quantity-min-multiplier: 0.5
+      speaker-quantity-max-multiplier: 2.0
+    difficulty:
+      enabled: true
+      per-tier-multiplier: 0.2
+    legendary:
+      enabled: true
+      min-tier: 4
+      multiplier: 2.0
+    rarity:
+      enabled: true
+      unlock-scores:
+        - 20
+        - 50
+        - 80
+        - 100
+      quantity-multipliers:
+        - 1.0
+        - 1.1
+        - 1.25
+        - 1.45
+        - 1.7
+    balancing:
+      enabled: true
+      max-experience: 120
+      max-emeralds: 48
+      max-item-amount: 64
+    enchanted-books:
+      enabled: true
+      base-chance: 0.05
+      per-rarity-chance: 0.05
+      min-level: 1
+      max-level: 3
+      rarity-level-bonus: 1
+      enchantments:
+        - unbreaking
+        - sharpness
+        - protection
+        - efficiency
+        - fortune
+        - mending
+  ui:
+    boss-bar-enabled: true
+
+villager-insights:
+  trades:
+    max-history-per-player-villager: 12
+    summary-recent-trades: 3
+  confinement:
+    scan-interval-seconds: 60
+    stationary-radius-blocks: 4
+    stationary-minutes: 20
+    cant-reach-walk-target-minutes: 5
+    stale-sleep-minutes: 30
+    stale-work-minutes: 30
