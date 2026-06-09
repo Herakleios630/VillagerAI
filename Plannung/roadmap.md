@@ -266,6 +266,8 @@ Weniger Reibung beim Ingame-Testen von Villager-Zustand, Ruf und aktivem Questpf
 - [x] Quest-Bossbar zeigt Questgeber-Richtung und Distanz als pragmatischen Radar-Ersatz
 - [x] Shift-Rechtsklick bleibt bewusst fuer Gespraech / Quest-Abgabe erhalten, damit normales Trading nicht blockiert wird
 - [x] Bossbar weist bei fertigen Interaktionsquests auf `Shift-Rechtsklick` zur Abgabe hin
+- [x] Quest-Marker über Villagern bei aktiver Quest (TextDisplay, Vanilla-kompatibel)
+- [ ] Weltmarker für Zielblock (SECURE-Standort, Erkundungsziel) per Partikel oder Display-Entity
 
 ---
 
@@ -310,10 +312,12 @@ Villager koennen Quests generieren oder vergeben.
 - [x] Liefere Material
 - [x] Repariere / bringe Ressource
 - [x] Braue / liefere Trank oder Heilmittel
-- [ ] Beleuchte / sichere einen gefaehrlichen Bereich fuer das Dorf
+- [x] Beleuchte / sichere einen gefaehrlichen Bereich fuer das Dorf (SECURE, Basisversion mit festem Zielradius nahe am Questgeber)
 - [x] Ersetze / baue einen Dorfblock wie Bett, Glocke oder Job-Block
 - [x] Zucht / Tierversorgung fuer Bauern, Metzger oder Schaefer
-- [ ] Erkunde / kartiere ein fernes Ziel fuer Kartographen
+- [ ] SECURE-Erweiterung: Licht-Level-Pruefung im Dorf (Blöcke mit Light-Level 0 als Ziel)
+- [x] Erkunde / kartiere ein fernes Ziel fuer Kartographen (EXPLORE, Basisversion wie VISIT mit Zielradius, Kartograph-Templates in YAML auf EXPLORE umgestellt)
+- [ ] EXPLORE-Erweiterung: Konkrete Ziele zum Erkunden: Ocean Monument, Witch Hut, Garnison und andere konkrete Objekte in Minecraft.
 - [x] Rede mit NPC / Questgeber
 
 ### Technische Aufgaben
@@ -387,6 +391,41 @@ Die KI reagiert stärker auf langfristiges Spielerverhalten.
 
 ---
 
+# Phase 10 – Öffentliche & Flüster-Unterhaltung (Conversation Visibility)
+## Ziel
+Spieler können zwischen öffentlichem Sprechen (Umkreis hörbar) und Flüstern (privat) wählen.
+
+### Konzept
+→ Vollständiges Konzept: `Plannung/whisper.md`
+
+### Features
+- [ ] Zwei Modi: PUBLIC (Standard) und WHISPER (privat)
+- [ ] Spieler-Nachrichten UND Villager-Antworten beide sichtbar gemäß Modus
+- [ ] `/whisper` Toggle-Command (Alias `/w`) während aktiver Konversation
+- [ ] Action-Bar-Feedback beim Umschalten
+- [ ] Partikel-Effekte über dem Villager beim Sprechen (HAPPY_VILLAGER / SOUL)
+- [ ] KI-Kontext: Villager weiß ob öffentlich oder geflüstert (Prompt-Anpassung)
+
+### Technische Aufgaben
+- [ ] `ConversationVisibility` Enum (PUBLIC, WHISPER) als Modell-Klasse
+- [ ] `ConversationSession` erweitern: `visibility` Feld + `participants Set<UUID>`
+- [ ] `AIRequest` erweitern: `String conversationVisibility` Feld
+- [ ] `ConversationService.broadcastToNearby()` für öffentliche Nachrichten
+- [ ] `ConversationService.sendChiefMessage()` auf Broadcast vs Direkt-Nachricht umbauen
+- [ ] `ConversationService.handlePlayerChat()` Spieler-Nachricht broadcasten
+- [ ] `PlayerChatListener.onAsyncChat()` Visibility aus Session lesen + durchreichen
+- [ ] `ChiefCommand` Subcommand `/whisper` + `/w` implementieren
+- [ ] `PluginDataLoader` neue `conversation.visibility` Config-Sektion einlesen
+- [ ] Python `prompt_builder.py` `conversationVisibility` in Prompt einweben
+- [ ] Python `reply_builder.py` Visibility-Feld durchleiten
+- [ ] `config.yml` um `conversation.visibility` Sektion erweitern
+- [ ] Phase-2-Vorbereitung: `participants` Set, Enum statt Boolean, session-basierter Broadcast
+
+### Ergebnis
+Spieler steuern die Sichtbarkeit ihrer Gespräche – für mehr Immersion und soziale Transparenz.
+
+---
+
 # Phase 9 – NPC-Upgrade (optional)
 ## Ziel
 Späterer Wechsel von echtem Villager zu eigenem NPC-System.
@@ -404,6 +443,16 @@ Späterer Wechsel von echtem Villager zu eigenem NPC-System.
 
 ### Ergebnis
 Mehr Kontrolle über Charakterdarstellung und Verhalten.
+
+---
+
+# Stabilisierung & UX-Härtung
+## Ziel
+Questgrenzen absichern und Spieler bei Sonderfällen besser führen.
+
+### Offene Punkte
+- [x] Exploit-Härtung an Questgrenzen (Cooldown-Umgehung, Item-Anrechnung in falschen Quests, Event-Duplikate)
+- [x] Ingame-Hinweise bei allen Blocker-Fällen (Cooldown, aktive Quest, Ruf zu niedrig)
 
 ---
 

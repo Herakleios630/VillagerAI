@@ -55,6 +55,22 @@ public final class PluginDataLoader {
         return plugin.getConfig().getBoolean("quests.ui.boss-bar-enabled", true);
     }
 
+    public boolean questMarkersEnabled() {
+        return plugin.getConfig().getBoolean("quests.markers.enabled", true);
+    }
+
+    public String questMarkerActiveSymbol() {
+        return plugin.getConfig().getString("quests.markers.active-symbol", "§7?");
+    }
+
+    public String questMarkerReadySymbol() {
+        return plugin.getConfig().getString("quests.markers.ready-symbol", "§e?");
+    }
+
+    public double questMarkerHeightAboveHead() {
+        return plugin.getConfig().getDouble("quests.markers.height-above-head", 0.6);
+    }
+
     public QuestDifficultyService.Settings loadQuestDifficultySettings() {
         return new QuestDifficultyService.Settings(
                 plugin.getConfig().getBoolean("quests.difficulty.enabled", true),
@@ -107,7 +123,9 @@ public final class PluginDataLoader {
                 QuestType.BREED,
                 QuestType.BREW,
                 QuestType.KILL,
-                QuestType.VISIT)) {
+                QuestType.VISIT,
+                QuestType.SECURE,
+                QuestType.EXPLORE)) {
             ConfigurationSection rewardSection = rewardsSection.getConfigurationSection(questType.name().toLowerCase(Locale.ROOT));
             if (rewardSection == null) {
                 plugin.getLogger().warning("Belohnungsdefinition fuer '" + questType.name().toLowerCase(Locale.ROOT) + "' fehlt. Nutze Notfall-Default.");
@@ -243,6 +261,8 @@ public final class PluginDataLoader {
         definitions.put(QuestType.BREW, new QuestRewardService.RewardDefinition(12, 2, List.of(QuestRewardService.RewardItem.item(Material.GLASS_BOTTLE, 4, List.of(Material.GLOWSTONE_DUST, Material.REDSTONE)))));
         definitions.put(QuestType.KILL, new QuestRewardService.RewardDefinition(12, 2, List.of(QuestRewardService.RewardItem.item(Material.ARROW, 8, List.of(Material.SPECTRAL_ARROW)))));
         definitions.put(QuestType.VISIT, new QuestRewardService.RewardDefinition(8, 1, List.of(QuestRewardService.RewardItem.item(Material.TORCH, 8, List.of(Material.LANTERN, Material.SOUL_LANTERN)))));
+        definitions.put(QuestType.SECURE, new QuestRewardService.RewardDefinition(10, 2, List.of(QuestRewardService.RewardItem.item(Material.TORCH, 8, List.of(Material.LANTERN, Material.SOUL_LANTERN)))));
+        definitions.put(QuestType.EXPLORE, new QuestRewardService.RewardDefinition(12, 2, List.of(QuestRewardService.RewardItem.item(Material.MAP, 1, List.of(Material.FILLED_MAP, Material.MAP)), QuestRewardService.RewardItem.item(Material.COMPASS, 1, List.of(Material.COMPASS, Material.RECOVERY_COMPASS)))));
         return definitions;
     }
 

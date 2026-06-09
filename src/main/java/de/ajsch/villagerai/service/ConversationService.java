@@ -165,6 +165,23 @@ public final class ConversationService {
                     .append(Component.text(chief.greeting(), NamedTextColor.WHITE)));
         }
 
+        questService.findActiveQuest(player.getUniqueId()).ifPresent(activeQuest -> {
+            if (!activeQuest.chiefId().equals(chief.chiefId())) {
+                String otherQuestGiverName = questService.findQuest(activeQuest.questId())
+                        .flatMap(q -> Optional.ofNullable(q.chiefId()))
+                        .map(id -> "einem anderen Dorfbewohner")
+                        .orElse("einem anderen Dorfbewohner");
+                player.sendMessage(Component.text(
+                        "Hinweis: Du hast noch eine offene Aufgabe bei " + otherQuestGiverName
+                                + " ('" + activeQuest.title() + "'). Schliesse sie erst ab oder brich sie ab.",
+                        NamedTextColor.GRAY));
+            }
+        });
+
+        if (!isCloseEnoughForCompletion(player, villager, chief.chiefId())) {
+            return;
+        }
+
         Collection<Quest> completedTalkQuests = questService.completeActiveTalkQuests(player.getUniqueId(), chief.chiefId());
         for (Quest completedQuest : completedTalkQuests) {
             player.sendMessage(Component.text("Quest abgeschlossen: " + completedQuest.title(), NamedTextColor.GREEN));
@@ -338,6 +355,36 @@ public final class ConversationService {
             return "Legendary-Cooldown aktiv: noch " + remainingSeconds + "s.";
         }
         return "Legendary verfuegbar.";
+    }
+
+    private String buildLegendaryBlockedReply(Player player, String chiefId, int villageReputationScore, int speakerReputationScore) {
+        if (!questDifficultyService.legendaryEnabled()) {
+            return "";
+        }
+        int legendaryTier = questDifficultyService.legendaryTier();
+        if (legendaryTier <= 0 || legendaryTier > questDifficultyService.maxTier()) {
+            return "";
+        }
+        if (villageReputationScore < 100 || speakerReputationScore < 100) {
+            return "Fuer ganz grosse Auftraege brauche ich noch mehr Vertrauen zu dir. "
+                    + "Hilf weiter im Dorf, dann reden wir irgendwann darueber.";
+        }
+        if (questDifficultyService.requiresNetherAccessForLegendary()
+                && !hasAnyCompletedAdvancement(player, "minecraft:story/enter_the_nether")) {
+            return "Manche Aufgaben setzen voraus, dass du die Welt jenseits des Portals kennst. "
+                    + "Komm wieder, wenn du im Nether warst.";
+        }
+        if (questDifficultyService.requiresEndAccessForLegendary()
+                && !hasAnyCompletedAdvancement(player, "minecraft:story/enter_the_end", "minecraft:end/root")) {
+            return "Es gibt Dinge, die nur jemand anfassen kann, der das Ende gesehen hat. "
+                    + "Komm zurueck, wenn du im End warst.";
+        }
+        if (questDifficultyService.requiresDragonKillForLegendary()
+                && !hasAnyCompletedAdvancement(player, "minecraft:end/kill_dragon", "minecraft:end/dragon_egg")) {
+            return "Solange der Drache lebt, stehe ich vor dir und schweige ueber das, was danach kommt. "
+                    + "Besiege ihn, dann reden wir ueber grosse Dinge.";
+        }
+        return "";
     }
 
     public void handlePlayerChat(UUID playerUuid, String message) {
@@ -521,9 +568,31 @@ public final class ConversationService {
         return true;
     }
 
+    public void recoverAllVillagers() {
+        int recovered = 0;
+        for (org.bukkit.World world : Bukkit.getWorlds()) {
+            for (Villager villager : world.getEntitiesByClass(Villager.class)) {
+                if (!villager.hasAI()) {
+                    boolean isInActiveSession = activeSessions.values().stream()
+                            .anyMatch(session -> session.villagerUuid().equals(villager.getUniqueId()));
+                    if (!isInActiveSession) {
+                        villager.setAI(true);
+                        recovered++;
+                    }
+                }
+            }
+        }
+        if (recovered > 0) {
+            plugin.getLogger().info("[ConversationService] Villager-AI fuer " + recovered + " eingefrorene(r) Villager wiederhergestellt.");
+        }
+    }
+
     public void shutdown() {
         timeoutTask.cancel();
         engagementTask.cancel();
+        for (ConversationSession session : new ArrayList<>(activeSessions.values())) {
+            restoreVillagerAfterConversation(session);
+        }
         activeSessions.values().forEach(this::restoreVillagerAfterConversation);
         activeSessions.clear();
         chiefRequestOwners.clear();
@@ -663,12 +732,25 @@ public final class ConversationService {
             return true;
         }
 
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            sendGeneratedChiefReply(playerUuid, session, "Ich kann dich gerade nicht erreichen.");
+            return true;
+        }
+
         int villageReputationScore = reputationService.getVillageScore(playerUuid, session.chief().villageId());
         int speakerReputationScore = reputationService.getSpeakerScore(playerUuid, session.chief().chiefId());
         int unlockedTier = Math.min(
             questDifficultyService.resolveUnlockedTier(villageReputationScore),
-            computeLegendaryAllowedTier(Bukkit.getPlayer(playerUuid), session.chief().chiefId(), villageReputationScore, speakerReputationScore));
+            computeLegendaryAllowedTier(player, session.chief().chiefId(), villageReputationScore, speakerReputationScore));
+        int maxTier = questDifficultyService.maxTier();
         int preferredTier = questDifficultyService.getPreference(playerUuid, session.chief().chiefId()).preferredDifficultyTier();
+
+        String legendaryHint = "";
+        if (unlockedTier < maxTier && preferredTier >= maxTier) {
+            legendaryHint = buildLegendaryBlockedReply(player, session.chief().chiefId(), villageReputationScore, speakerReputationScore);
+        }
+
         QuestOfferService.QuestOffer offer = questOfferService.createOfferForTier(
             playerUuid,
             session.chief(),
@@ -676,7 +758,12 @@ public final class ConversationService {
             Math.min(preferredTier, unlockedTier));
         session.pendingQuestOffer().set(offer);
     session.pendingQuestOfferWasSpontaneous().set(false);
-        sendGeneratedChiefReply(playerUuid, session, offer.promptText());
+
+        String reply = offer.promptText();
+        if (!legendaryHint.isBlank()) {
+            reply = reply + " " + legendaryHint;
+        }
+        sendGeneratedChiefReply(playerUuid, session, reply);
         return true;
     }
 
@@ -1147,6 +1234,24 @@ public final class ConversationService {
         float yaw = (float) Math.toDegrees(Math.atan2(-direction.getX(), direction.getZ()));
         float pitch = (float) -Math.toDegrees(Math.atan2(direction.getY(), horizontalLength));
         villager.setRotation(yaw, pitch);
+    }
+
+    private boolean isCloseEnoughForCompletion(Player player, Villager villager, String chiefId) {
+        double distance = player.getLocation().distance(villager.getLocation());
+        if (distance <= 8.0D) {
+            return true;
+        }
+
+        Optional<Quest> activeQuest = questService.findActiveQuest(player.getUniqueId());
+        if (activeQuest.isEmpty() || !activeQuest.get().chiefId().equals(chiefId)) {
+            return true;
+        }
+
+        player.sendMessage(Component.text(
+                "Du bist zu weit vom Questgeber entfernt, um die Quest abzuschliessen. ("
+                        + (int) distance + "m, maximal 8m)",
+                NamedTextColor.RED));
+        return false;
     }
 
     private void prepareVillagerForConversation(Villager villager) {

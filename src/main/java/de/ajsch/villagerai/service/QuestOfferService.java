@@ -109,6 +109,24 @@ public final class QuestOfferService {
                     offer.targetZ(),
                     offer.radius(),
                     offer.difficultyTier());
+            case EXPLORE -> questService.activateExploreQuest(
+                    player.getUniqueId(),
+                    chief,
+                    offer.worldName(),
+                    offer.targetX(),
+                    offer.targetZ(),
+                    offer.radius(),
+                    offer.difficultyTier());
+            case SECURE -> questService.activateSecureQuest(
+                    player.getUniqueId(),
+                    chief,
+                    offer.material(),
+                    offer.amount(),
+                    offer.worldName(),
+                    offer.targetX(),
+                    offer.targetZ(),
+                    offer.radius(),
+                    offer.difficultyTier());
             case DELIVER, TALK -> questService.activateTalkQuest(player.getUniqueId(), chief, offer.title(), offer.description());
         };
     }
@@ -250,6 +268,55 @@ public final class QuestOfferService {
                 difficultyTier);
     }
 
+    private QuestOffer exploreOffer(Chief chief, int distance, int radius, int difficultyTier) {
+        int baseX = (int) Math.round(chief.x());
+        int baseZ = (int) Math.round(chief.z());
+        int targetX = baseX + distance;
+        int targetZ = baseZ - distance;
+        return new QuestOffer(
+                QuestType.EXPLORE,
+                "Erkunde X " + targetX + " / Z " + targetZ,
+                "Erreiche den Ort bei X " + targetX + " / Z " + targetZ + " und melde dich danach wieder bei "
+                        + chief.chatName() + ".",
+                "Ich brauche einen Blick auf die Umgebung bei X " + targetX + " / Z " + targetZ
+                        + ". Sieh dort nach und komm dann zu mir zurueck. Willst du das uebernehmen?",
+                "Gut. Sieh dich dort um und komm danach wieder zu mir.",
+                null,
+                1,
+                null,
+                chief.world(),
+                targetX,
+                targetZ,
+                radius,
+                null,
+                difficultyTier);
+    }
+
+    private QuestOffer secureOffer(Chief chief, Material material, int amount, int distance, int radius, String intro, int difficultyTier) {
+        int baseX = (int) Math.round(chief.x());
+        int baseZ = (int) Math.round(chief.z());
+        int targetX = baseX + distance;
+        int targetZ = baseZ - distance;
+        String materialName = formatMaterial(material);
+        return new QuestOffer(
+                QuestType.SECURE,
+                "Sichere mit " + amount + " " + materialName,
+                "Platziere " + amount + " " + materialName + " bei X " + targetX + " / Z " + targetZ
+                        + " und melde dich danach wieder bei " + chief.chatName() + ".",
+                "Ein wenig weiter draussen bei X " + targetX + " / Z " + targetZ + " ist es nicht sicher. "
+                        + intro + " Platziere dort " + amount + " " + materialName + ". Bist du dabei?",
+                "Gut. Sichere die Stelle bei X " + targetX + " / Z " + targetZ + " mit " + amount + " " + materialName + " und melde dich dann wieder.",
+                material,
+                amount,
+                null,
+                chief.world(),
+                targetX,
+                targetZ,
+                radius,
+                null,
+                difficultyTier);
+    }
+
     private String formatMaterial(Material material) {
         return material.name().toLowerCase(Locale.ROOT).replace('_', ' ');
     }
@@ -353,11 +420,11 @@ public final class QuestOfferService {
                 }
                 yield new OfferTemplate(type, intro, null, entityType, amount, 0, 0, null, Math.max(0, intValue(rawEntry.get("difficulty-tier"), 0)));
             }
-            case VISIT -> {
+            case VISIT, EXPLORE -> {
                 int distance = intValue(rawEntry.get("distance"), 96);
                 int radius = intValue(rawEntry.get("radius"), 5);
                 if (distance <= 0 || radius <= 0) {
-                    logger.warning("VISIT-Template in '" + scopeName + "' ignoriert: distance und radius muessen > 0 sein.");
+                    logger.warning(type.name() + "-Template in '" + scopeName + "' ignoriert: distance und radius muessen > 0 sein.");
                     yield null;
                 }
                 yield new OfferTemplate(type, intro, null, null, 1, distance, radius, null, Math.max(0, intValue(rawEntry.get("difficulty-tier"), 0)));
@@ -379,6 +446,17 @@ public final class QuestOfferService {
                     yield null;
                 }
                 yield new OfferTemplate(type, intro, null, entityType, amount, 0, 0, null, Math.max(0, intValue(rawEntry.get("difficulty-tier"), 0)));
+            }
+            case SECURE -> {
+                Material material = Material.matchMaterial(stringValue(rawEntry.get("material")));
+                int amount = intValue(rawEntry.get("amount"), 1);
+                int distance = intValue(rawEntry.get("distance"), 30);
+                int radius = intValue(rawEntry.get("radius"), 5);
+                if (material == null || material.isAir() || !material.isBlock() || amount <= 0 || distance <= 0 || radius <= 0) {
+                    logger.warning("SECURE-Template in '" + scopeName + "' ignoriert: gueltiges Block-Material, amount > 0, distance > 0 und radius > 0 sind Pflicht.");
+                    yield null;
+                }
+                yield new OfferTemplate(type, intro, material, null, amount, distance, radius, null, Math.max(0, intValue(rawEntry.get("difficulty-tier"), 0)));
             }
             default -> null;
         };
@@ -463,6 +541,8 @@ public final class QuestOfferService {
                 case BREED -> service.breedOffer(entityType, amount, intro, chief, difficultyTier);
                 case KILL -> service.killOffer(entityType, amount, intro, chief, difficultyTier);
                 case VISIT -> service.visitOffer(chief, distance, radius, difficultyTier);
+                case EXPLORE -> service.exploreOffer(chief, distance, radius, difficultyTier);
+                case SECURE -> service.secureOffer(chief, material, amount, distance, radius, intro, difficultyTier);
                 default -> service.fetchOffer(Material.BREAD, 8, intro, chief, difficultyTier);
             };
         }

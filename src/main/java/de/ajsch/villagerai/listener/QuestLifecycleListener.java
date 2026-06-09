@@ -3,12 +3,16 @@ package de.ajsch.villagerai.listener;
 import de.ajsch.villagerai.VillageChiefPlugin;
 import de.ajsch.villagerai.model.Chief;
 import de.ajsch.villagerai.model.Quest;
+import de.ajsch.villagerai.model.QuestType;
 import de.ajsch.villagerai.service.ChiefService;
 import de.ajsch.villagerai.service.QuestService;
 import de.ajsch.villagerai.service.QuestUiService;
 import de.ajsch.villagerai.storage.VillagerProfileRepository;
 import java.util.Collection;
 import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.EntityType;
@@ -36,6 +40,8 @@ public final class QuestLifecycleListener implements Listener {
     private final QuestService questService;
     private final QuestUiService questUiService;
     private final VillagerProfileRepository villagerProfileRepository;
+    private final Map<UUID, Long> lastWrongTargetHintMillis = new ConcurrentHashMap<>();
+    private static final long WRONG_TARGET_HINT_COOLDOWN_MILLIS = 15_000L;
 
     public QuestLifecycleListener(
             VillageChiefPlugin plugin,
@@ -76,13 +82,17 @@ public final class QuestLifecycleListener implements Listener {
             }
             questUiService.refresh(player);
         }
+
+        if (updates.isEmpty()) {
+            hintWrongBreedTarget(player, event.getEntityType());
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
         Player player = event.getPlayer();
-        Collection<QuestService.BuildQuestUpdate> updates = questService.advanceBuildQuests(player, event.getBlockPlaced().getType());
-        for (QuestService.BuildQuestUpdate update : updates) {
+        Collection<QuestService.BuildQuestUpdate> buildUpdates = questService.advanceBuildQuests(player, event.getBlockPlaced().getType());
+        for (QuestService.BuildQuestUpdate update : buildUpdates) {
             Quest quest = update.quest();
             player.sendMessage(Component.text(
                     "Quest-Fortschritt: " + quest.title() + " (" + quest.progress() + "/" + quest.goal() + ")",
@@ -93,6 +103,24 @@ public final class QuestLifecycleListener implements Listener {
                         NamedTextColor.YELLOW));
             }
             questUiService.refresh(player);
+        }
+
+        Collection<QuestService.SecureQuestUpdate> secureUpdates = questService.advanceSecureQuests(player, event.getBlockPlaced().getType(), event.getBlockPlaced().getLocation());
+        for (QuestService.SecureQuestUpdate update : secureUpdates) {
+            Quest quest = update.quest();
+            player.sendMessage(Component.text(
+                    "Quest-Fortschritt: " + quest.title() + " (" + quest.progress() + "/" + quest.goal() + ")",
+                    NamedTextColor.GREEN));
+            if (update.readyToTurnIn()) {
+                player.sendMessage(Component.text(
+                        "Ziel erreicht: Kehre zum Questgeber zurueck, um die Quest abzuschliessen.",
+                        NamedTextColor.YELLOW));
+            }
+            questUiService.refresh(player);
+        }
+
+        if (buildUpdates.isEmpty() && secureUpdates.isEmpty()) {
+            hintWrongBlockTarget(player, event.getBlockPlaced().getType());
         }
     }
 
@@ -123,8 +151,18 @@ public final class QuestLifecycleListener implements Listener {
             return;
         }
 
-        Collection<QuestService.VisitQuestUpdate> updates = questService.advanceVisitQuests(event.getPlayer(), to);
-        for (QuestService.VisitQuestUpdate update : updates) {
+        Collection<QuestService.VisitQuestUpdate> visitUpdates = questService.advanceVisitQuests(event.getPlayer(), to);
+        for (QuestService.VisitQuestUpdate update : visitUpdates) {
+            QuestService.VisitRequirement requirement = update.requirement();
+            event.getPlayer().sendMessage(Component.text(
+                    "Ziel erreicht: X " + requirement.targetX() + " / Z " + requirement.targetZ()
+                            + ". Kehre zum Questgeber zurueck, um die Quest abzuschliessen.",
+                    NamedTextColor.YELLOW));
+            questUiService.refresh(event.getPlayer());
+        }
+
+        Collection<QuestService.ExploreQuestUpdate> exploreUpdates = questService.advanceExploreQuests(event.getPlayer(), to);
+        for (QuestService.ExploreQuestUpdate update : exploreUpdates) {
             QuestService.VisitRequirement requirement = update.requirement();
             event.getPlayer().sendMessage(Component.text(
                     "Ziel erreicht: X " + requirement.targetX() + " / Z " + requirement.targetZ()
@@ -238,6 +276,75 @@ public final class QuestLifecycleListener implements Listener {
             }
             questUiService.refresh(killer);
         }
+
+        if (updates.isEmpty()) {
+            hintWrongKillTarget(killer, event.getEntityType());
+        }
+    }
+
+    private void hintWrongKillTarget(Player player, EntityType killedType) {
+        Quest activeQuest = questService.findActiveQuest(player.getUniqueId()).orElse(null);
+        if (activeQuest == null || activeQuest.type() != QuestType.KILL) {
+            return;
+        }
+        if (activeQuest.targetKey().equalsIgnoreCase(killedType.name())) {
+            return;
+        }
+        sendThrottledActionBar(player, "Das zaehlt nicht fuer deine aktive Quest. Du brauchst: "
+                + formatTargetMob(activeQuest.targetKey()) + " (" + activeQuest.progress() + "/" + activeQuest.goal() + ")");
+    }
+
+    private void hintWrongBreedTarget(Player player, EntityType bredType) {
+        Quest activeQuest = questService.findActiveQuest(player.getUniqueId()).orElse(null);
+        if (activeQuest == null || activeQuest.type() != QuestType.BREED) {
+            return;
+        }
+        if (activeQuest.targetKey().equalsIgnoreCase(bredType.name())) {
+            return;
+        }
+        sendThrottledActionBar(player, "Das zaehlt nicht fuer deine aktive Quest. Du musst zuechten: "
+                + formatTargetMob(activeQuest.targetKey()) + " (" + activeQuest.progress() + "/" + activeQuest.goal() + ")");
+    }
+
+    private void hintWrongBlockTarget(Player player, org.bukkit.Material placedMaterial) {
+        Quest activeQuest = questService.findActiveQuest(player.getUniqueId()).orElse(null);
+        if (activeQuest == null) {
+            return;
+        }
+        if (activeQuest.type() == QuestType.BUILD) {
+            questService.parseBuildRequirement(activeQuest).ifPresent(requiredMaterial -> {
+                if (requiredMaterial != placedMaterial) {
+                    sendThrottledActionBar(player, "Das zaehlt nicht. Du musst platzieren: "
+                            + formatMaterialName(requiredMaterial) + " (" + activeQuest.progress() + "/" + activeQuest.goal() + ")");
+                }
+            });
+        } else if (activeQuest.type() == QuestType.SECURE) {
+            questService.parseSecureRequirement(activeQuest).ifPresent(requirement -> {
+                if (requirement.material() != placedMaterial) {
+                    sendThrottledActionBar(player, "Das zaehlt nicht. Du musst platzieren: "
+                            + formatMaterialName(requirement.material()) + " (" + activeQuest.progress() + "/" + activeQuest.goal() + ")");
+                }
+            });
+        }
+    }
+
+    private void sendThrottledActionBar(Player player, String message) {
+        long now = System.currentTimeMillis();
+        UUID playerUuid = player.getUniqueId();
+        Long lastHint = lastWrongTargetHintMillis.get(playerUuid);
+        if (lastHint != null && now - lastHint < WRONG_TARGET_HINT_COOLDOWN_MILLIS) {
+            return;
+        }
+        lastWrongTargetHintMillis.put(playerUuid, now);
+        player.sendActionBar(Component.text(message, NamedTextColor.RED));
+    }
+
+    private String formatTargetMob(String entityTypeName) {
+        return entityTypeName.toLowerCase(Locale.ROOT).replace('_', ' ');
+    }
+
+    private String formatMaterialName(org.bukkit.Material material) {
+        return material.name().toLowerCase(Locale.ROOT).replace('_', ' ');
     }
 
     private void scheduleFetchSync(Player player) {

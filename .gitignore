@@ -4,6 +4,7 @@ out/
 run/
 .vscode/
 .continue/
+bin/
 game-memory.db
 *.log
 __pycache__/
