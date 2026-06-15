@@ -17,4 +17,10 @@ public interface ReputationRepository {
     void saveReputation(VillageReputation reputation);
 
     void saveReputation(SpeakerReputation reputation);
-}
+
+        /**
+         * Löscht alle Speaker-Reputations-Einträge für die angegebene speakerId
+         * über alle Spieler hinweg (z. B. nach Tod/Unset eines Chiefs).
+         */
+        void removeAllSpeakerReputation(String speakerId);
+    }

@@ -15,3 +15,6 @@ permissions:
   villagerai.chief:
     description: Allows chief administration commands.
     default: op
+  villagerai.debugchat:
+    description: Allows controlling the chat debug logging level.
+    default: op

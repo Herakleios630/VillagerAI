@@ -48,6 +48,7 @@ public final class ConversationService {
     private final QuestOfferService questOfferService;
     private final QuestRewardService questRewardService;
     private final QuestUiService questUiService;
+    private final MourningService mourningService;
     private final ReputationService reputationService;
     private final ConversationHistoryRepository conversationHistoryRepository;
     private final VillagerContextService villagerContextService;
@@ -81,6 +82,7 @@ public final class ConversationService {
             QuestOfferService questOfferService,
             QuestRewardService questRewardService,
             QuestUiService questUiService,
+            MourningService mourningService,
             ReputationService reputationService,
             ConversationHistoryRepository conversationHistoryRepository,
             VillagerContextService villagerContextService,
@@ -106,6 +108,7 @@ public final class ConversationService {
         this.questOfferService = questOfferService;
         this.questRewardService = questRewardService;
         this.questUiService = questUiService;
+        this.mourningService = mourningService;
         this.reputationService = reputationService;
         this.conversationHistoryRepository = conversationHistoryRepository;
         this.villagerContextService = villagerContextService;
@@ -147,6 +150,9 @@ public final class ConversationService {
     }
 
     public void startConversation(Player player, Villager villager, Chief chief) {
+        // End any previous conversation before starting a new one
+        endConversation(player.getUniqueId());
+
         ConversationSession session = new ConversationSession(
                 UUID.randomUUID(),
                 chief,
@@ -287,6 +293,10 @@ public final class ConversationService {
 
         questService.syncActiveFetchQuests(player);
 
+        // Re-scan village-light secure quests: a player may have placed lights
+        // elsewhere and now returns to the quest giver.
+        questService.syncAllVillageLightProgress(player);
+
         Collection<Quest> completedInteractionQuests = questService.completeReadyInteractionQuests(
                 player.getUniqueId(),
                 chief.chiefId());
@@ -394,6 +404,11 @@ public final class ConversationService {
         }
 
         session.lastInteractionMillis().set(System.currentTimeMillis());
+
+        // Chat-Debug: Spieler-Eingabe loggen (NORMAL und VERBOSE)
+        plugin.logChatDebug(VillageChiefPlugin.ChatDebugLevel.NORMAL,
+                "[INPUT] " + playerUuid + " -> " + session.chief().chatName() + ": " + message);
+
         if (handleConversationExitRequest(playerUuid, session, message)) {
             return;
         }
@@ -508,8 +523,13 @@ public final class ConversationService {
                 combinedReputationSummary,
                 combinedReputationScore,
                 combinedReputationSummary,
+                !mourningService.isVillageInMourning(session.chief().villageId()),
+                mourningService.isVillageInMourning(session.chief().villageId()),
                 playerUuid,
                 message);
+
+        // Chat-Debug: Prompt loggen (nur VERBOSE)
+        logChatDebugPrompt(request);
 
         aiService.generateReply(request).whenComplete((reply, error) -> Bukkit.getScheduler().runTask(plugin, () -> {
             ConversationSession currentSession = activeSessions.get(playerUuid);
@@ -544,6 +564,10 @@ public final class ConversationService {
                     new ConversationTurn(ConversationRole.CHIEF, replyText, System.currentTimeMillis()));
 
             sendChiefMessage(player, session, replyText, NamedTextColor.WHITE);
+
+            // Chat-Debug: Villager-Antwort + Statusblock loggen (NORMAL und VERBOSE)
+            logChatDebugReply(playerUuid, session, replyText);
+
             maybeTriggerSpontaneousQuestOffer(playerUuid, currentSession, player, message);
             releaseRequestSlot(session, playerUuid);
         }));
@@ -756,6 +780,11 @@ public final class ConversationService {
             session.chief(),
             session.villagerContext(),
             Math.min(preferredTier, unlockedTier));
+        if (offer == null) {
+            sendGeneratedChiefReply(playerUuid, session,
+                    "Unser Dorf ist bereits sicher und hell. Ich habe im Moment keine Aufgabe fuer dich.");
+            return true;
+        }
         session.pendingQuestOffer().set(offer);
     session.pendingQuestOfferWasSpontaneous().set(false);
 
@@ -829,6 +858,34 @@ public final class ConversationService {
                 new ConversationTurn(ConversationRole.CHIEF, pendingOffer.acceptedReplyText(), System.currentTimeMillis()));
         sendChiefMessage(player, session, pendingOffer.acceptedReplyText(), NamedTextColor.WHITE);
         player.sendMessage(Component.text("Quest angenommen: " + quest.title(), NamedTextColor.GREEN));
+
+        // village-light: give a practical hint about the sub-area
+        if (questService.isVillageLightSecureQuest(quest)) {
+            String[] parts = quest.targetKey().split("\\|");
+            if (parts.length >= 9) {
+                try {
+                    int initialDark = Integer.parseInt(parts[5]);
+                    int cx = Integer.parseInt(parts[6]);
+                    int cz = Integer.parseInt(parts[8]);
+                    int distance = (int) Math.round(player.getLocation().distance(
+                            new org.bukkit.Location(player.getWorld(), cx + 0.5D, 64.0D, cz + 0.5D)));
+                    player.sendMessage(Component.text(
+                            initialDark + " dunkle Stellen im Zielbereich (~" + distance + "m entfernt). "
+                                    + "Setze beliebige Lichtquellen (Fackeln, Laternen, Glowstone) – "
+                                    + "die Bossbar zeigt deinen Fortschritt.",
+                            NamedTextColor.GRAY));
+                } catch (NumberFormatException ignored) {
+                    player.sendMessage(Component.text(
+                            "Setze beliebige Lichtquellen im Zielbereich – die Bossbar zeigt deinen Fortschritt.",
+                            NamedTextColor.GRAY));
+                }
+            } else {
+                player.sendMessage(Component.text(
+                        "Setze beliebige Lichtquellen im Zielbereich – die Bossbar zeigt deinen Fortschritt.",
+                        NamedTextColor.GRAY));
+            }
+        }
+
         questUiService.refresh(player);
     }
 
@@ -920,6 +977,9 @@ public final class ConversationService {
                 session.chief(),
                 session.villagerContext(),
                 villageReputationScore);
+        if (offer == null) {
+            return;
+        }
         session.pendingQuestOffer().set(offer);
         session.pendingQuestOfferWasSpontaneous().set(true);
         setSpontaneousOfferCooldown(playerUuid, session.chief().chiefId(), spontaneousQuestOfferCooldownMillis);
@@ -1420,12 +1480,148 @@ public final class ConversationService {
             return variants[Math.floorMod(session.chief().chiefId().hashCode() + historySize, variants.length)];
         }
 
-        String[] variants = {
-            "Du wiederholst dich nicht. Also sollte ich es auch nicht tun. Sag klar, was du willst.",
-            "Darauf habe ich schon genug gesagt. Stell lieber die naechste klare Frage.",
-            "Lass uns nicht auf derselben Stelle treten. Komm zur Sache."
-        };
+        String[] variants;
+        if (historySize > 10) {
+            variants = new String[]{
+                "Wir kennen uns schon eine Weile. Du weisst, ich wiederhole mich nicht gern. Komm zur Sache.",
+                "Alte Geschichten muessen wir nicht nochmal durchkauen. Was willst du wirklich wissen?",
+                "Ich hab's schon gesagt. Also: weiter im Text."
+            };
+        } else {
+            variants = new String[]{
+                "Lass mich anders fragen: Was moechtest du als naechstes wissen?",
+                "Ich wiederhole mich. Also: Was ist dein naechstes Anliegen?",
+                "Reden wir ueber etwas anderes. Was brennt dir auf der Seele?"
+            };
+        }
         return variants[Math.floorMod(session.chief().chiefId().hashCode() + historySize, variants.length)];
+    }
+
+    private void logChatDebugReply(UUID playerUuid, ConversationSession session, String replyText) {
+        plugin.logChatDebug(VillageChiefPlugin.ChatDebugLevel.NORMAL,
+                "[OUTPUT] " + session.chief().chatName() + " -> Spieler " + playerUuid + ": " + replyText);
+
+        // Statusblock bauen
+        StringBuilder status = new StringBuilder();
+        status.append("[STATUS]");
+        status.append(" mourning=").append(mourningService.isVillageInMourning(session.chief().villageId()));
+
+        // Chief alive/not null check
+        boolean chiefExists = false;
+        boolean chiefAlive = false;
+        if (Bukkit.getEntity(session.villagerUuid()) instanceof org.bukkit.entity.LivingEntity living) {
+            chiefExists = true;
+            chiefAlive = !living.isDead();
+        }
+        status.append(" villager-exists=").append(chiefExists);
+        status.append(" villager-alive=").append(chiefAlive);
+
+        // Aktive Quests des Spielers
+        int activeQuestCount = questService.findPlayerQuests(playerUuid).size();
+        status.append(" active-quests=").append(activeQuestCount);
+
+        // Aktueller Quest-Status
+        questService.findActiveQuest(playerUuid).ifPresentOrElse(
+                quest -> status.append(" current-quest=").append(quest.title())
+                        .append(" progress=").append(quest.progress())
+                        .append("/").append(quest.goal())
+                        .append(" status=").append(quest.status()),
+                () -> status.append(" current-quest=none"));
+
+        plugin.logChatDebug(VillageChiefPlugin.ChatDebugLevel.NORMAL, status.toString());
+    }
+
+    public void logChatDebugPrompt(AIRequest request) {
+        if (request == null) return;
+        boolean memoryEnabled = plugin.getConfig().getBoolean("memory.enabled", false);
+        String aiProvider = plugin.getConfig().getString("ai.provider", "dummy");
+        int messageLength = request.playerMessage() == null ? 0 : request.playerMessage().length();
+        int recentConversationLength = request.recentConversation() == null ? 0 : request.recentConversation().length();
+        int relationshipMemoryLength = request.relationshipMemorySummary() == null ? 0 : request.relationshipMemorySummary().length();
+        boolean likelyMemoryTrigger = looksLikeMemoryRecall(request.playerMessage());
+
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("SYSTEM: ").append(plugin.getConfig().getString("ai.http.system-prompt", ""));
+        prompt.append("\nchiefId=").append(request.chiefId());
+        prompt.append(" villageId=").append(request.villageId());
+        prompt.append(" villageName=").append(request.villageName());
+        prompt.append("\nvillageDescription=").append(request.villageDescription());
+        prompt.append("\nvillageAttributes=").append(request.villageAttributes());
+        prompt.append("\nvillageBiome=").append(request.villageBiome());
+        prompt.append(" villagePopulation=").append(request.villagePopulationEstimate());
+        prompt.append("\nvillageEvent=").append(request.villageEventSummary());
+        prompt.append("\nchiefName=").append(request.chiefName());
+        prompt.append(" role=").append(request.chiefRole());
+        prompt.append(" personality=").append(request.chiefPersonality());
+        prompt.append(" tone=").append(request.chiefTone());
+        prompt.append(" behavior=").append(request.chiefBehaviorHint());
+        prompt.append("\nvillagerProfession=").append(request.villagerProfession());
+        prompt.append(" villagerType=").append(request.villagerType());
+        prompt.append("\nbiome=").append(request.currentBiome());
+        prompt.append(" world=").append(request.worldName());
+        prompt.append(" isDay=").append(request.isDay());
+        prompt.append(" isRaining=").append(request.isRaining());
+        prompt.append(" isThundering=").append(request.isThundering());
+        prompt.append("\nhealth=").append(request.currentHealth()).append("/").append(request.maxHealth());
+        prompt.append(" healthRatio=").append(request.healthRatio());
+        prompt.append(" ateRecently=").append(request.ateRecently());
+        prompt.append("\ntradeSummary=").append(request.tradeSummary());
+        prompt.append("\nconfinementSummary=").append(request.confinementSummary());
+        prompt.append("\nworldFacts=").append(request.authoritativeWorldFactsSummary());
+        prompt.append("\nrecentConversation=").append(request.recentConversation());
+        prompt.append("\nrelationshipMemory=").append(request.relationshipMemorySummary());
+        prompt.append("\nhomePoi=").append(request.homePoi());
+        prompt.append(" jobSitePoi=").append(request.jobSitePoi());
+        prompt.append(" meetingPointPoi=").append(request.meetingPointPoi());
+        prompt.append("\nvillageReputation=").append(request.villageReputationScore())
+                .append(" (").append(request.villageReputationSummary()).append(")");
+        prompt.append("\nspeakerReputation=").append(request.speakerReputationScore())
+                .append(" (").append(request.speakerReputationSummary()).append(")");
+        prompt.append("\ncombinedReputation=").append(request.combinedReputationScore())
+                .append(" (").append(request.combinedReputationSummary()).append(")");
+        prompt.append("\nvillageHasChief=").append(request.villageHasChief());
+        prompt.append(" villageMourning=").append(request.villageMourning());
+        prompt.append("\nplayerUuid=").append(request.playerUuid());
+        prompt.append("\nmemory.enabled=").append(memoryEnabled);
+        prompt.append(" ai.provider=").append(aiProvider);
+        prompt.append(" likelyMemoryTrigger=").append(likelyMemoryTrigger);
+        prompt.append(" messageLength=").append(messageLength);
+        prompt.append(" recentConversationLength=").append(recentConversationLength);
+        prompt.append(" relationshipMemoryLength=").append(relationshipMemoryLength);
+        prompt.append("\nmessagePreview=").append(shortenForChatDebug(request.playerMessage(), 120));
+        prompt.append("\nMESSAGE: ").append(request.playerMessage());
+
+        plugin.logChatDebug(VillageChiefPlugin.ChatDebugLevel.VERBOSE,
+                "[PROMPT] " + prompt.toString());
+    }
+
+    private boolean looksLikeMemoryRecall(String message) {
+        String normalized = normalizeForIntent(message);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        return normalized.contains("name")
+                || normalized.contains("erinner")
+                || normalized.contains("weisst du noch")
+                || normalized.contains("wei t du noch")
+                || normalized.contains("fruher")
+                || normalized.contains("fruher")
+                || normalized.contains("letztes mal")
+                || normalized.contains("damals");
+    }
+
+    private String shortenForChatDebug(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = value.replace('\n', ' ').trim();
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        if (maxLength <= 3) {
+            return normalized.substring(0, Math.max(0, maxLength));
+        }
+        return normalized.substring(0, maxLength - 3) + "...";
     }
 
     private String normalizeReplyForRepeatCheck(String message) {

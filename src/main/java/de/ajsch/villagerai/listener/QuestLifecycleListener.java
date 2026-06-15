@@ -1,16 +1,16 @@
 package de.ajsch.villagerai.listener;
 
 import de.ajsch.villagerai.VillageChiefPlugin;
-import de.ajsch.villagerai.model.Chief;
+import de.ajsch.villagerai.model.Speaker;
 import de.ajsch.villagerai.model.Quest;
 import de.ajsch.villagerai.model.QuestType;
-import de.ajsch.villagerai.service.ChiefService;
+import de.ajsch.villagerai.service.SpeakerService;
 import de.ajsch.villagerai.service.QuestService;
 import de.ajsch.villagerai.service.QuestUiService;
-import de.ajsch.villagerai.storage.VillagerProfileRepository;
 import java.util.Collection;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.bukkit.Bukkit;
@@ -26,6 +26,7 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityBreedEvent;
 import org.bukkit.event.entity.EntityTransformEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
@@ -36,24 +37,21 @@ import net.kyori.adventure.text.format.NamedTextColor;
 public final class QuestLifecycleListener implements Listener {
 
     private final VillageChiefPlugin plugin;
-    private final ChiefService chiefService;
+    private final SpeakerService speakerService;
     private final QuestService questService;
     private final QuestUiService questUiService;
-    private final VillagerProfileRepository villagerProfileRepository;
     private final Map<UUID, Long> lastWrongTargetHintMillis = new ConcurrentHashMap<>();
     private static final long WRONG_TARGET_HINT_COOLDOWN_MILLIS = 15_000L;
 
     public QuestLifecycleListener(
             VillageChiefPlugin plugin,
-            ChiefService chiefService,
+            SpeakerService speakerService,
             QuestService questService,
-            QuestUiService questUiService,
-            VillagerProfileRepository villagerProfileRepository) {
+            QuestUiService questUiService) {
         this.plugin = plugin;
-        this.chiefService = chiefService;
+        this.speakerService = speakerService;
         this.questService = questService;
         this.questUiService = questUiService;
-        this.villagerProfileRepository = villagerProfileRepository;
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -105,6 +103,7 @@ public final class QuestLifecycleListener implements Listener {
             questUiService.refresh(player);
         }
 
+        // Handle block-count secure quests synchronously (light already known)
         Collection<QuestService.SecureQuestUpdate> secureUpdates = questService.advanceSecureQuests(player, event.getBlockPlaced().getType(), event.getBlockPlaced().getLocation());
         for (QuestService.SecureQuestUpdate update : secureUpdates) {
             Quest quest = update.quest();
@@ -119,9 +118,62 @@ public final class QuestLifecycleListener implements Listener {
             questUiService.refresh(player);
         }
 
-        if (buildUpdates.isEmpty() && secureUpdates.isEmpty()) {
+        // Handle village-light secure quests with 1-tick delay so light updates propagate
+        Quest activeQuest = questService.findActiveQuest(player.getUniqueId()).orElse(null);
+        if (activeQuest != null && questService.isVillageLightSecureQuest(activeQuest)) {
+            int[] subCenter = questService.extractVillageLightSubCenter(activeQuest);
+            int half = questService.extractVillageLightAreaSize(activeQuest) / 2;
+            int bx = event.getBlockPlaced().getLocation().getBlockX();
+            int bz = event.getBlockPlaced().getLocation().getBlockZ();
+            boolean insideSubArea = subCenter != null
+                    && bx >= subCenter[0] - half && bx <= subCenter[0] + half - 1
+                    && bz >= subCenter[2] - half && bz <= subCenter[2] + half - 1;
+
+            if (insideSubArea) {
+                // Delay scan by 3 ticks to let Minecraft's light engine fully propagate
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    Collection<QuestService.SecureQuestUpdate> vlUpdates = questService.syncAllVillageLightProgress(player);
+                    for (QuestService.SecureQuestUpdate update : vlUpdates) {
+                        Quest q = update.quest();
+                        questUiService.refresh(player);
+                        if (update.readyToTurnIn()) {
+                            player.sendActionBar(Component.text(
+                                    "Der Bereich ist hell! Melde dich beim Questgeber!",
+                                    NamedTextColor.GREEN));
+                        }
+                    }
+                }, 10L);
+            } else {
+                player.sendActionBar(Component.text(
+                        "Außerhalb des Zielbereichs (" + (half * 2) + "×" + (half * 2) + "). Die Bossbar zeigt die Richtung.",
+                        NamedTextColor.GOLD));
+            }
+        }
+
+        // Extra hint for wrong material in block-count secure or build quests
+        if (buildUpdates.isEmpty() && secureUpdates.isEmpty()
+                && (activeQuest == null || !questService.isVillageLightSecureQuest(activeQuest))) {
             hintWrongBlockTarget(player, event.getBlockPlaced().getType());
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockBreak(BlockBreakEvent event) {
+        Player player = event.getPlayer();
+        // Re-scan village-light secure quests with 3-tick delay so light engine settles.
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            Collection<QuestService.SecureQuestUpdate> updates = questService.syncAllVillageLightProgress(player);
+            for (QuestService.SecureQuestUpdate update : updates) {
+                Quest quest = update.quest();
+                // village-light: silent bossbar update, no chat spam
+                questUiService.refresh(player);
+                if (update.readyToTurnIn()) {
+                    player.sendActionBar(Component.text(
+                            "Der Bereich ist hell! Melde dich beim Questgeber!",
+                            NamedTextColor.GREEN));
+                }
+            }
+        }, 10L);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -133,7 +185,7 @@ public final class QuestLifecycleListener implements Listener {
             return;
         }
 
-        String villagerName = chiefService.getConversationSpeaker(villager).chatName();
+        String villagerName = speakerService.getSpeaker(villager).map(Speaker::displayName).orElse("Dorfbewohner");
         String professionName = formatProfession(villager);
         String message = "Der " + professionName + " " + villagerName + " wurde in einen Zombie verwandelt.";
         broadcastVillagerEvent(message);
@@ -205,15 +257,13 @@ public final class QuestLifecycleListener implements Listener {
             return;
         }
 
-        String speakerId = chiefService.getChief(villager)
-                .map(Chief::chiefId)
-                .or(() -> villagerProfileRepository.findByEntityUuid(villager.getUniqueId()).map(profile -> profile.speakerId()))
-                .orElse(null);
+        Optional<Speaker> speakerOpt = speakerService.getSpeaker(villager);
+        String speakerId = speakerOpt.map(Speaker::speakerId).orElse(null);
         if (speakerId == null) {
             return;
         }
 
-        String questGiverName = chiefService.getConversationSpeaker(villager).chatName();
+        String questGiverName = speakerOpt.get().displayName();
         Collection<Quest> cancelledQuests = questService.cancelActiveQuestsForChief(speakerId);
         for (Quest quest : cancelledQuests) {
             Player player = Bukkit.getPlayer(quest.playerUuid());
@@ -233,7 +283,7 @@ public final class QuestLifecycleListener implements Listener {
             return;
         }
 
-        String villagerName = chiefService.getConversationSpeaker(villager).chatName();
+        String villagerName = speakerService.getSpeaker(villager).map(Speaker::displayName).orElse("Dorfbewohner");
         String professionName = formatProfession(villager);
         String cause = event.getEntity().getKiller() == null
                 ? "ist gestorben"

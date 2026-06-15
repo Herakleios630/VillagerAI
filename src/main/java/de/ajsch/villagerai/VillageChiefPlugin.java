@@ -5,15 +5,23 @@ import de.ajsch.villagerai.ai.DummyAIService;
 import de.ajsch.villagerai.ai.HttpAIService;
 import de.ajsch.villagerai.command.ChiefCommand;
 import de.ajsch.villagerai.config.PluginDataLoader;
+import de.ajsch.villagerai.listener.ChiefDeathHandler;
 import de.ajsch.villagerai.listener.PlayerChatListener;
 import de.ajsch.villagerai.listener.QuestLifecycleListener;
 import de.ajsch.villagerai.listener.QuestUiListener;
 import de.ajsch.villagerai.listener.ReputationListener;
-import de.ajsch.villagerai.listener.VillagerProfileListener;
+import de.ajsch.villagerai.listener.SpeakerLifecycleListener;
 import de.ajsch.villagerai.listener.VillagerTradeListener;
 import de.ajsch.villagerai.listener.VillagerInteractListener;
+import de.ajsch.villagerai.service.ChiefAutoAssignmentService;
+import de.ajsch.villagerai.service.ChiefMeetingObserver;
+import de.ajsch.villagerai.service.MourningService;
 import de.ajsch.villagerai.service.ChiefService;
+import de.ajsch.villagerai.service.SpeakerService;
+import de.ajsch.villagerai.service.ChiefVisualService;
 import de.ajsch.villagerai.service.ConversationService;
+import de.ajsch.villagerai.service.DarkBlockCache;
+import de.ajsch.villagerai.service.LightLevelScanner;
 import de.ajsch.villagerai.service.QuestDifficultyService;
 import de.ajsch.villagerai.service.QuestService;
 import de.ajsch.villagerai.service.QuestRewardService;
@@ -23,26 +31,40 @@ import de.ajsch.villagerai.service.QuestMarkerService;
 import de.ajsch.villagerai.service.QuestOfferService;
 import de.ajsch.villagerai.service.ReputationService;
 import de.ajsch.villagerai.service.VillageIdentityService;
+import de.ajsch.villagerai.service.VillageLightParticleMarkerService;
+import de.ajsch.villagerai.service.VillagePerimeterDisplayService;
+import de.ajsch.villagerai.service.VillagePerimeterService;
 import de.ajsch.villagerai.service.VillagerDebugOverlayService;
 import de.ajsch.villagerai.service.VillagerConfinementService;
 import de.ajsch.villagerai.service.VillagerContextService;
 import de.ajsch.villagerai.service.VillagerTradeService;
 import de.ajsch.villagerai.storage.ChiefRepository;
+import de.ajsch.villagerai.storage.SpeakerRepository;
+import de.ajsch.villagerai.storage.YamlSpeakerRepository;
 import de.ajsch.villagerai.storage.ConversationHistoryRepository;
 import de.ajsch.villagerai.storage.QuestDifficultyPreferenceRepository;
 import de.ajsch.villagerai.storage.QuestRepository;
 import de.ajsch.villagerai.storage.ReputationRepository;
-import de.ajsch.villagerai.storage.VillagerProfileRepository;
+
 import de.ajsch.villagerai.storage.VillagerTradeRepository;
 import de.ajsch.villagerai.storage.YamlChiefRepository;
 import de.ajsch.villagerai.storage.YamlConversationHistoryRepository;
 import de.ajsch.villagerai.storage.YamlQuestDifficultyPreferenceRepository;
 import de.ajsch.villagerai.storage.YamlQuestRepository;
 import de.ajsch.villagerai.storage.YamlReputationRepository;
-import de.ajsch.villagerai.storage.YamlVillagerProfileRepository;
+
 import de.ajsch.villagerai.storage.YamlVillagerTradeRepository;
+import de.ajsch.villagerai.storage.YamlVillageRepository;
 import de.ajsch.villagerai.util.Keys;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -59,6 +81,24 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class VillageChiefPlugin extends JavaPlugin {
 
+    public enum ChatDebugLevel {
+        OFF, NORMAL, VERBOSE;
+
+        public static ChatDebugLevel fromConfigKey(String key) {
+            if (key == null) return OFF;
+            return switch (key.toLowerCase(Locale.ROOT)) {
+                case "normal" -> NORMAL;
+                case "verbose" -> VERBOSE;
+                default -> OFF;
+            };
+        }
+    }
+
+    private volatile ChatDebugLevel chatDebugLevel = ChatDebugLevel.OFF;
+    private volatile PrintWriter chatDebugWriter;
+    private static final DateTimeFormatter CHAT_DEBUG_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(ZoneId.systemDefault());
+
     private PluginDataLoader dataLoader;
     private ExecutorService aiExecutor;
     private ChiefRepository chiefRepository;
@@ -67,7 +107,8 @@ public final class VillageChiefPlugin extends JavaPlugin {
     private ConversationHistoryRepository conversationHistoryRepository;
     private ReputationRepository reputationRepository;
     private VillagerTradeRepository villagerTradeRepository;
-    private VillagerProfileRepository villagerProfileRepository;
+    private SpeakerRepository speakerRepository;
+    private SpeakerService speakerService;
     private ChiefService chiefService;
     private QuestService questService;
     private QuestDifficultyService questDifficultyService;
@@ -85,11 +126,24 @@ public final class VillageChiefPlugin extends JavaPlugin {
     private VillagerConfinementService villagerConfinementService;
     private VillagerContextService villagerContextService;
     private VillageIdentityService villageIdentityService;
+    private VillagePerimeterService villagePerimeterService;
+    private VillagePerimeterDisplayService villagePerimeterDisplayService;
+    private DarkBlockCache darkBlockCache;
+    private LightLevelScanner lightLevelScanner;
+    private VillageLightParticleMarkerService villageLightParticleMarkerService;
+    private ChiefVisualService chiefVisualService;
+    private ChiefAutoAssignmentService chiefAutoAssignmentService;
+    private MourningService mourningService;
 
     @Override
     public void onEnable() {
         this.dataLoader = new PluginDataLoader(this);
         dataLoader.saveBundledResources();
+
+        // Chat-Debug-Log initialisieren
+        initChatDebugLog();
+        this.chatDebugLevel = ChatDebugLevel.fromConfigKey(
+                getConfig().getString("debug.chat-debug-level", "off"));
 
         this.aiExecutor = Executors.newFixedThreadPool(2, new AiThreadFactory());
         PluginDataLoader.ConfinementSettings confinementSettings = dataLoader.confinementSettings();
@@ -106,18 +160,54 @@ public final class VillageChiefPlugin extends JavaPlugin {
         this.villagerTradeRepository = new YamlVillagerTradeRepository(
             this,
             dataLoader.villagerTradeHistoryLimit());
-        this.villagerProfileRepository = new YamlVillagerProfileRepository(this);
-        this.villageIdentityService = new VillageIdentityService();
+        this.villageIdentityService = new VillageIdentityService(keys);
+        this.villageIdentityService.setVillageRepository(new YamlVillageRepository(this));
+        this.villageIdentityService.setLogger(getLogger());
+        this.speakerRepository = new YamlSpeakerRepository(this);
+        this.speakerService = new SpeakerService(this, speakerRepository, villageIdentityService, getLogger());
+        this.villagePerimeterService = new VillagePerimeterService(
+                dataLoader.questsSecurePerimeterMargin(),
+                dataLoader.questsSecureMinPerimeterSize(),
+                Duration.ofSeconds(dataLoader.questsSecureDarkListCacheTtlSeconds()));
+        this.darkBlockCache = new DarkBlockCache(Duration.ofSeconds(dataLoader.questsSecureDarkListCacheTtlSeconds()));
+        this.lightLevelScanner = new LightLevelScanner();
+        // Enable debug logging to diagnose dark-block detection issues
+        this.darkBlockCache.setDebugLogging(dataLoader.debugDarkBlockScanLogging());
+        this.lightLevelScanner.setDebugLogging(dataLoader.debugDarkBlockScanLogging());
+        this.chiefVisualService = new ChiefVisualService(this, chiefRepository, getLogger());
+                this.reputationService = new ReputationService(reputationRepository);
+        this.reputationService.setLogger(getLogger());
+        // MourningService ohne ChiefService erzeugen (entkoppelt via Setter)
+        this.mourningService = new MourningService(
+                this,
+                reputationService,
+                villageIdentityService,
+                villagePerimeterService,
+                chiefRepository,
+                getLogger());
+        this.villageIdentityService.setChiefRepository(chiefRepository);
+        this.villageIdentityService.setMourningService(mourningService);
         this.chiefService = new ChiefService(
             keys,
             chiefRepository,
-            villagerProfileRepository,
             villageIdentityService,
-            getLogger(),
-            dataLoader.loadChiefProfilesSection());
+            chiefVisualService,
+            speakerService,
+            mourningService,
+            getLogger());
+        // Nachträgliche Verdrahtung: MourningService bekommt ChiefService per Setter
+        this.mourningService.setChiefService(chiefService);
         this.questService = new QuestService(
             questRepository,
+            getLogger(),
+            lightLevelScanner,
+            villagePerimeterService,
+            villageIdentityService,
+            darkBlockCache,
             dataLoader.questTalkCooldownSeconds());
+        this.villageLightParticleMarkerService = new VillageLightParticleMarkerService(
+                this, questService, lightLevelScanner,
+                dataLoader.debugVillageLightParticleMarker());
         this.questDifficultyService = new QuestDifficultyService(
             questDifficultyPreferenceRepository,
             dataLoader.loadQuestDifficultySettings());
@@ -125,8 +215,13 @@ public final class VillageChiefPlugin extends JavaPlugin {
             getLogger(),
             questService,
             questDifficultyService,
-            dataLoader.loadQuestOfferTemplatesSection());
-                this.questGiverLocatorService = new QuestGiverLocatorService(chiefService, villagerProfileRepository);
+            dataLoader.loadQuestOfferTemplatesSection(),
+            villageIdentityService,
+            villagePerimeterService,
+            darkBlockCache,
+            dataLoader.questsSecureSubAreaSize(),
+            dataLoader.questsSecureMinDarkBlocks());
+                this.questGiverLocatorService = new QuestGiverLocatorService(speakerService);
         this.questRewardService = new QuestRewardService(
             dataLoader.loadQuestRewardDefinitions(),
             dataLoader.loadRewardScalingSettings());
@@ -137,7 +232,14 @@ public final class VillageChiefPlugin extends JavaPlugin {
             dataLoader.questMarkersEnabled(),
             dataLoader.questMarkerActiveSymbol(),
             dataLoader.questMarkerReadySymbol(),
-            dataLoader.questMarkerHeightAboveHead());
+            dataLoader.questMarkerHeightAboveHead(),
+            dataLoader.questWorldMarkersEnabled(),
+            dataLoader.questWorldMarkerSecureMaterial(),
+            dataLoader.questWorldMarkerExploreMaterial(),
+            dataLoader.questWorldMarkerHeightAboveGround(),
+            dataLoader.questWorldMarkerParticle(),
+            dataLoader.questWorldMarkerLabelDistance(),
+            dataLoader.questWorldMarkerShowBlock());
         this.questMarkerService.start();
         this.questUiService = new QuestUiService(
             this,
@@ -145,8 +247,7 @@ public final class VillageChiefPlugin extends JavaPlugin {
             questGiverLocatorService,
             questMarkerService,
             dataLoader.questUiEnabled());
-        this.reputationService = new ReputationService(reputationRepository);
-        this.villagerTradeService = new VillagerTradeService(
+                this.villagerTradeService = new VillagerTradeService(
             villagerTradeRepository,
             dataLoader.villagerTradeSummaryRecentTrades());
         this.villagerConfinementService = new VillagerConfinementService(
@@ -167,32 +268,49 @@ public final class VillageChiefPlugin extends JavaPlugin {
                 questOfferService,
                 questRewardService,
                 questUiService,
-                reputationService,
-                conversationHistoryRepository,
-                villagerContextService,
-                conversationSettings.timeout(),
+                mourningService,
+                                reputationService,
+                                speakerService,
+                                chiefRepository,
+                                villageIdentityService,
+                                conversationHistoryRepository,
+                                villagerContextService,
+                                conversationSettings.timeout(),
             getConfig().getLong("conversation.check-interval-seconds", 15L),
             conversationSettings.maxConcurrentRequests(),
             conversationSettings.waitingMessage(),
-            conversationSettings.chiefBusyMessage(),
+            conversationSettings.npcBusyMessage(),
             conversationSettings.queueFullMessage(),
             conversationSettings.spontaneousQuestOfferChance(),
             conversationSettings.spontaneousQuestOfferCooldownSeconds(),
             conversationSettings.spontaneousQuestOfferDeclineCooldownSeconds(),
             conversationSettings.spontaneousQuestOfferMinCombinedReputation(),
-            conversationSettings.recentChiefRepliesLimit(),
+            conversationSettings.recentConversationTurnsLimit(),
             conversationSettings.recentConversationTurnsLimit(),
             conversationSettings.friendlySpontaneousOfferReputationThreshold(),
             conversationSettings.questCooldownMinutesThresholdSeconds(),
             conversationSettings.repeatFallbackLowHealthThreshold());
-        this.villagerDebugOverlayService = new VillagerDebugOverlayService(
+                this.villagerDebugOverlayService = new VillagerDebugOverlayService(
             this,
-            chiefService,
+            speakerService,
             conversationService,
             questService,
             reputationService,
             villagerContextService,
             villageIdentityService);
+                this.villagePerimeterDisplayService = new VillagePerimeterDisplayService(
+                this, speakerService, villagePerimeterService, villageIdentityService);
+
+        ChiefMeetingObserver chiefMeetingObserver = new ChiefMeetingObserver(villageIdentityService, getLogger());
+        this.chiefAutoAssignmentService = new ChiefAutoAssignmentService(
+                chiefService, chiefRepository, villageIdentityService, mourningService, chiefMeetingObserver, getLogger());
+        getServer().getPluginManager().registerEvents(chiefAutoAssignmentService, this);
+        // Alte PDC-Werte bereinigen, bevor Chiefs zugewiesen werden
+        villageIdentityService.purgeAllStalePdc();
+        chiefAutoAssignmentService.initialScan();
+        mourningService.loadAndReschedule();
+        chiefVisualService.restoreAllBanners(chiefService);
+        chiefVisualService.start();
 
         registerListeners();
                 registerCommands();
@@ -219,6 +337,10 @@ public final class VillageChiefPlugin extends JavaPlugin {
             questMarkerService.shutdown();
         }
 
+        if (villageLightParticleMarkerService != null) {
+            villageLightParticleMarkerService.shutdown();
+        }
+
         if (villagerRecoveryTask != null) {
             villagerRecoveryTask.cancel();
         }
@@ -231,6 +353,14 @@ public final class VillageChiefPlugin extends JavaPlugin {
             villagerConfinementService.shutdown();
         }
 
+        if (villagePerimeterDisplayService != null) {
+            villagePerimeterDisplayService.shutdown();
+        }
+
+        if (chiefVisualService != null) {
+            chiefVisualService.shutdown();
+        }
+
         if (aiService != null) {
             aiService.close();
         }
@@ -238,6 +368,7 @@ public final class VillageChiefPlugin extends JavaPlugin {
         if (aiExecutor != null) {
             aiExecutor.shutdownNow();
         }
+        closeChatDebugLog();
     }
 
     private AIService createAiService() {
@@ -260,21 +391,33 @@ public final class VillageChiefPlugin extends JavaPlugin {
     private void registerListeners() {
         PluginManager pluginManager = getServer().getPluginManager();
         pluginManager.registerEvents(new VillagerInteractListener(
-                chiefService,
+                speakerService,
                 conversationService,
                 getConfig().getBoolean("interaction.allow-regular-villager-conversations", true),
                 getConfig().getBoolean("interaction.regular-villager-conversations-require-sneak", true)), this);
         pluginManager.registerEvents(new PlayerChatListener(conversationService), this);
         pluginManager.registerEvents(new QuestUiListener(questUiService), this);
-        pluginManager.registerEvents(new QuestLifecycleListener(
+                pluginManager.registerEvents(new QuestLifecycleListener(
             this,
-            chiefService,
+            speakerService,
             questService,
-            questUiService,
-            villagerProfileRepository), this);
-        pluginManager.registerEvents(new ReputationListener(chiefService, villageIdentityService, reputationService), this);
+            questUiService), this);
+        pluginManager.registerEvents(new ReputationListener(speakerService, villageIdentityService, reputationService), this);
         pluginManager.registerEvents(new VillagerTradeListener(this, villagerTradeService), this);
-        pluginManager.registerEvents(new VillagerProfileListener(chiefService), this);
+        pluginManager.registerEvents(new SpeakerLifecycleListener(speakerService), this);
+        pluginManager.registerEvents(new ChiefDeathHandler(chiefService, getLogger()), this);
+
+        // ChunkLoad-Listener: Partikel-Tasks für trauernde Dörfer bei Rejoin wiederherstellen
+        {
+            var mourning = mourningService;
+            pluginManager.registerEvents(new org.bukkit.event.Listener() {
+                @org.bukkit.event.EventHandler
+                public void onChunkLoad(org.bukkit.event.world.ChunkLoadEvent event) {
+                    mourning.onChunkLoad(event.getWorld(), event.getChunk().getX(), event.getChunk().getZ());
+                }
+            }, this);
+        }
+        pluginManager.registerEvents(chiefVisualService, this);
     }
 
     private void registerCommands() {
@@ -286,16 +429,32 @@ public final class VillageChiefPlugin extends JavaPlugin {
         ChiefCommand executor = new ChiefCommand(
             this,
             chiefService,
+            speakerService,
             conversationService,
             questService,
+            questOfferService,
             questDifficultyService,
             questUiService,
             reputationService,
+            mourningService,
             villageIdentityService,
                 villagerContextService,
+                villagePerimeterDisplayService,
             villagerDebugOverlayService);
         chiefCommand.setExecutor(executor);
         chiefCommand.setTabCompleter(executor);
+    }
+
+    public VillagePerimeterService villagePerimeterService() {
+        return villagePerimeterService;
+    }
+
+    public DarkBlockCache darkBlockCache() {
+        return darkBlockCache;
+    }
+
+    public LightLevelScanner lightLevelScanner() {
+        return lightLevelScanner;
     }
 
     public double getTargetRangeBlocks() {
@@ -312,7 +471,7 @@ public final class VillageChiefPlugin extends JavaPlugin {
                 }
             }
 
-            chiefService.reloadProfiles(dataLoader.loadChiefProfilesSection());
+            // Speaker-Profile werden on-demand erstellt; kein Batch-Load nötig
         int refreshedVillagerProfiles = refreshLoadedVillagerProfiles();
         questService.reloadTalkQuestCooldown(dataLoader.questTalkCooldownSeconds());
         questDifficultyService.reloadSettings(dataLoader.loadQuestDifficultySettings());
@@ -320,6 +479,14 @@ public final class VillageChiefPlugin extends JavaPlugin {
         questRewardService.reloadRewards(dataLoader.loadQuestRewardDefinitions(), dataLoader.loadRewardScalingSettings());
         questUiService.reloadSettings(dataLoader.questUiEnabled());
         conversationService.reloadSettings(dataLoader.loadConversationRuntimeSettings());
+        villageLightParticleMarkerService.reloadEnabled(
+                dataLoader.debugVillageLightParticleMarker());
+        chiefVisualService.reloadConfig();
+        mourningService.reloadConfig();
+
+        // Chat-Debug-Level aus Config uebernehmen
+        this.chatDebugLevel = ChatDebugLevel.fromConfigKey(
+                getConfig().getString("debug.chat-debug-level", "off"));
 
         return List.of(
                 "config.yml neu geladen",
@@ -334,8 +501,49 @@ public final class VillageChiefPlugin extends JavaPlugin {
     private int refreshLoadedVillagerProfiles() {
         List<org.bukkit.entity.Villager> villagers = new ArrayList<>();
         getServer().getWorlds().forEach(world -> villagers.addAll(world.getEntitiesByClass(org.bukkit.entity.Villager.class)));
-        chiefService.refreshLoadedVillagerProfiles(villagers);
+        speakerService.refreshLoadedVillagerProfiles(villagers);
         return villagers.size();
+    }
+
+    public ChatDebugLevel getChatDebugLevel() {
+        return chatDebugLevel;
+    }
+
+    public void setChatDebugLevel(ChatDebugLevel level) {
+        this.chatDebugLevel = level;
+    }
+
+    public void logChatDebug(ChatDebugLevel requiredLevel, String line) {
+        if (chatDebugLevel.ordinal() < requiredLevel.ordinal()) {
+            return;
+        }
+        // Konsole
+        getLogger().info("[ChatDebug] " + line);
+        // Datei
+        PrintWriter writer = this.chatDebugWriter;
+        if (writer != null) {
+            writer.println("[" + CHAT_DEBUG_TIMESTAMP.format(Instant.now()) + "] " + line);
+            writer.flush();
+        }
+    }
+
+    private void initChatDebugLog() {
+        try {
+            Path logFile = getDataFolder().toPath().resolve("chat-debug.log");
+            this.chatDebugWriter = new PrintWriter(new FileWriter(logFile.toFile(), true), true);
+            getLogger().info("Chat-Debug-Log geoeffnet: " + logFile.toAbsolutePath());
+        } catch (IOException e) {
+            getLogger().warning("Konnte chat-debug.log nicht oeffnen: " + e.getMessage());
+            this.chatDebugWriter = null;
+        }
+    }
+
+    private void closeChatDebugLog() {
+        PrintWriter writer = this.chatDebugWriter;
+        if (writer != null) {
+            writer.close();
+            this.chatDebugWriter = null;
+        }
     }
 
     private static final class AiThreadFactory implements ThreadFactory {

@@ -137,8 +137,9 @@ public final class QuestUiService {
             return "";
         }
 
-        Location targetLocation = new Location(player.getWorld(), requirement.targetX() + 0.5D, 64.0D, requirement.targetZ() + 0.5D);
-        int distance = (int) Math.round(player.getLocation().distance(targetLocation));
+        double dx = requirement.targetX() + 0.5D - player.getLocation().getX();
+        double dz = requirement.targetZ() + 0.5D - player.getLocation().getZ();
+        int distance = (int) Math.round(Math.sqrt(dx * dx + dz * dz));
         return " | Ziel: " + distance + "m entfernt";
     }
 
@@ -148,8 +149,9 @@ public final class QuestUiService {
             return "";
         }
 
-        Location targetLocation = new Location(player.getWorld(), requirement.targetX() + 0.5D, 64.0D, requirement.targetZ() + 0.5D);
-        int distance = (int) Math.round(player.getLocation().distance(targetLocation));
+        double dx = requirement.targetX() + 0.5D - player.getLocation().getX();
+        double dz = requirement.targetZ() + 0.5D - player.getLocation().getZ();
+        int distance = (int) Math.round(Math.sqrt(dx * dx + dz * dz));
         return " | Ziel: " + distance + "m entfernt";
     }
 
@@ -214,6 +216,33 @@ public final class QuestUiService {
     }
 
     private String buildSecureTargetHint(Player player, Quest quest) {
+        // village-light format: material|world|villageId|light|goal|initialDark|cx|cy|cz
+        if (questService.isVillageLightSecureQuest(quest)) {
+            String[] parts = quest.targetKey().split("\\|");
+            if (parts.length < 9) {
+                return " | Zielort offen";
+            }
+            String targetWorldName = parts[1];
+            if (!targetWorldName.equalsIgnoreCase(player.getWorld().getName())) {
+                return " | Zielort: andere Welt";
+            }
+            try {
+                int cx = Integer.parseInt(parts[6]);
+                int cy = Integer.parseInt(parts[7]);
+                int cz = Integer.parseInt(parts[8]);
+                // Horizontal-only distance: ignore Y so bossbar shows 0 m when player stands in the sub-area.
+                double dx = (cx + 0.5D) - player.getLocation().getX();
+                double dz = (cz + 0.5D) - player.getLocation().getZ();
+                int distance = (int) Math.round(Math.sqrt(dx * dx + dz * dz));
+                Location targetFlat = new Location(player.getWorld(), cx + 0.5D, player.getLocation().getY(), cz + 0.5D);
+                String direction = describeRelativeDirection(player.getLocation(), targetFlat);
+                return " | Bereich: " + direction + " " + distance + "m";
+            } catch (NumberFormatException exception) {
+                return " | Zielort offen";
+            }
+        }
+
+        // block-count format: material:world:x:z:radius
         String[] parts = quest.targetKey().split(":", 5);
         if (parts.length != 5) {
             return " | Zielort offen";
@@ -235,11 +264,11 @@ public final class QuestUiService {
             return " | Zielort: andere Welt";
         }
 
-        Location targetLocation = new Location(player.getWorld(), targetX + 0.5D, 64.0D, targetZ + 0.5D);
-        double deltaX = targetLocation.getX() - player.getLocation().getX();
-        double deltaZ = targetLocation.getZ() - player.getLocation().getZ();
-        int distance = (int) Math.round(Math.sqrt(deltaX * deltaX + deltaZ * deltaZ));
-        String direction = describeRelativeDirection(player.getLocation(), targetLocation);
+        double dx = targetX + 0.5D - player.getLocation().getX();
+        double dz = targetZ + 0.5D - player.getLocation().getZ();
+        int distance = (int) Math.round(Math.sqrt(dx * dx + dz * dz));
+        String direction = describeRelativeDirection(player.getLocation(),
+                new Location(player.getWorld(), targetX + 0.5D, player.getLocation().getY(), targetZ + 0.5D));
         return " | Zielort: " + direction + " " + distance + "m (Radius " + radius + ")";
     }
 
@@ -253,11 +282,11 @@ public final class QuestUiService {
             return " | Zielort: andere Welt";
         }
 
-        Location targetLocation = new Location(player.getWorld(), requirement.targetX() + 0.5D, 64.0D, requirement.targetZ() + 0.5D);
-        double deltaX = targetLocation.getX() - player.getLocation().getX();
-        double deltaZ = targetLocation.getZ() - player.getLocation().getZ();
-        int distance = (int) Math.round(Math.sqrt(deltaX * deltaX + deltaZ * deltaZ));
-        String direction = describeRelativeDirection(player.getLocation(), targetLocation);
+        double dx = requirement.targetX() + 0.5D - player.getLocation().getX();
+        double dz = requirement.targetZ() + 0.5D - player.getLocation().getZ();
+        int distance = (int) Math.round(Math.sqrt(dx * dx + dz * dz));
+        Location targetFlat = new Location(player.getWorld(), requirement.targetX() + 0.5D, player.getLocation().getY(), requirement.targetZ() + 0.5D);
+        String direction = describeRelativeDirection(player.getLocation(), targetFlat);
         return " | Zielort: " + direction + " " + distance + "m";
     }
 

@@ -1,17 +1,33 @@
 package de.ajsch.villagerai.storage;
 
-import de.ajsch.villagerai.model.Chief;
-import java.util.Collection;
+import de.ajsch.villagerai.model.ChiefAttributes;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * Persistiert ausschliesslich Chief-spezifische Attribute (visualTier,
+ * banner, legendary, etc.).  Die Village-Zuordnung und die Speaker-Daten
+ * verwaltet {@link SpeakerRepository}.
+ */
 public interface ChiefRepository {
 
-    Optional<Chief> findByEntityUuid(UUID entityUuid);
+    Optional<ChiefAttributes> findByEntityUuid(UUID entityUuid);
 
-    Collection<Chief> findAll();
+    Optional<ChiefAttributes> findActiveByVillageId(String villageId);
 
-    void saveChief(Chief chief);
+    List<ChiefAttributes> findAll();
 
-    void removeChief(UUID entityUuid);
+    void save(ChiefAttributes attributes);
+
+    void deleteByEntityUuid(UUID entityUuid);
+
+    /**
+     * Uebergangs-Bruecke: Loescht alle ChiefAttributes zu dieser Entity-UUID.
+     * Wird nur von ChiefService.unmarkChief() verwendet, das spaeter
+     * auf Speaker+ChiefAttributes umgestellt wird.
+     */
+    default void deleteChiefAttributes(UUID entityUuid) {
+        deleteByEntityUuid(entityUuid);
+    }
 }

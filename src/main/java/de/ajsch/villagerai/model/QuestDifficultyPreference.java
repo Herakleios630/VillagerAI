@@ -4,7 +4,7 @@ import java.util.UUID;
 
 public record QuestDifficultyPreference(
         UUID playerUuid,
-        String chiefId,
+        String speakerId,
         int preferredDifficultyTier,
         int lastSuggestedTier,
         long lastSuggestedAtEpochMillis,
@@ -14,8 +14,8 @@ public record QuestDifficultyPreference(
         if (playerUuid == null) {
             throw new IllegalArgumentException("playerUuid must not be null");
         }
-        if (chiefId == null || chiefId.isBlank()) {
-            throw new IllegalArgumentException("chiefId must not be blank");
+        if (speakerId == null || speakerId.isBlank()) {
+            throw new IllegalArgumentException("speakerId must not be blank");
         }
         if (preferredDifficultyTier < 0) {
             throw new IllegalArgumentException("preferredDifficultyTier must not be negative");
@@ -28,7 +28,7 @@ public record QuestDifficultyPreference(
     public QuestDifficultyPreference withPreferredDifficultyTier(int tier, long updatedAt) {
         return new QuestDifficultyPreference(
                 playerUuid,
-                chiefId,
+                speakerId,
                 tier,
                 lastSuggestedTier,
                 lastSuggestedAtEpochMillis,
@@ -38,7 +38,7 @@ public record QuestDifficultyPreference(
     public QuestDifficultyPreference withSuggestion(int tier, long suggestedAt, long updatedAt) {
         return new QuestDifficultyPreference(
                 playerUuid,
-                chiefId,
+                speakerId,
                 preferredDifficultyTier,
                 tier,
                 suggestedAt,

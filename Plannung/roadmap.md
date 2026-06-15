@@ -184,6 +184,18 @@ Chiefs merken sich frühere Interaktionen.
 - [x] Gesprächshistorie pro Spieler und Chief speichern
 - [x] Letzte X Nachrichten mitführen
 - [x] zusammengefasste Memory-Struktur vorbereiten
+- [x] Embedding-Suche für Trigger-Phrasen (Basisversion, 4a-8b)
+- [ ] Embedding-Suche verbessern: archivierte Turns + Summary-Embeddings durchsuchen (Ansätze A+B, siehe `Plannung/ad-hoc/embedding-suche-verbessern-ansatz-a-b.md`)
+"- [ ] Nachgelagert: Query-basierte Minisummaries (Ansatz C) – bei Trigger-Fragen die relevantesten Turns/Summaries per Embedding finden und ein query-spezifisches Kurzsummary generieren, um semantisch entfernte aber logisch zusammenhängende Informationen auffindbar zu machen
+- [x] **Memory v2 – Faktenbasiertes Langzeitgedächtnis** (2026-06-13, 8 Arbeitskarten: A–H)
+  - [x] Aufgabe A: Datenbank-Schema (`player_facts` + FTS5)
+  - [x] Aufgabe B: Async-Worker-Queue (`worker.py`)
+  - [x] Aufgabe C1+C2: Prompts + Worker-Integration (Intent/Fakten/Extraction)
+  - [x] Aufgabe D: Hybrid-Retrieval + Relevanz-Filter
+  - [x] Aufgabe E: Prompt-Builder Facts-Section
+  - [x] Aufgabe F: Plugin-Debug-Fallback-Regex
+  - [x] Aufgabe G: Konfiguration Facts
+  - [x] Aufgabe H: Integrationstest (13 Tests, 2026-06-13) + Dokumentation"
 - [x] "Bekannter Spieler"-Logik
 - [x] Erinnerungen funktionieren funktional auch fuer normale Villager ueber deren stabile Sprecher-ID
 
@@ -315,7 +327,7 @@ Villager koennen Quests generieren oder vergeben.
 - [x] Beleuchte / sichere einen gefaehrlichen Bereich fuer das Dorf (SECURE, Basisversion mit festem Zielradius nahe am Questgeber)
 - [x] Ersetze / baue einen Dorfblock wie Bett, Glocke oder Job-Block
 - [x] Zucht / Tierversorgung fuer Bauern, Metzger oder Schaefer
-- [ ] SECURE-Erweiterung: Licht-Level-Pruefung im Dorf (Blöcke mit Light-Level 0 als Ziel)
+- [x] SECURE-Erweiterung: Licht-Level-Prüfung im Dorf → ausgelagert nach Phase 9.5 (Sub-Bereich-Ausleuchtung)
 - [x] Erkunde / kartiere ein fernes Ziel fuer Kartographen (EXPLORE, Basisversion wie VISIT mit Zielradius, Kartograph-Templates in YAML auf EXPLORE umgestellt)
 - [ ] EXPLORE-Erweiterung: Konkrete Ziele zum Erkunden: Ocean Monument, Witch Hut, Garnison und andere konkrete Objekte in Minecraft.
 - [x] Rede mit NPC / Questgeber
@@ -446,6 +458,112 @@ Mehr Kontrolle über Charakterdarstellung und Verhalten.
 
 ---
 
+# Phase 9.5 – SECURE-Erweiterung: Sub-Bereich-Ausleuchtung (Light-Level-Prüfung)
+## Ziel
+Der Spieler bekommt einen zufälligen 20×20 Sub-Bereich innerhalb des Dorfperimeters
+zugewiesen. Mit 5–10 strategisch platzierten Fackeln (oder anderen Lichtquellen)
+muss er dort alle spawnfähigen dunklen Oberflächen beseitigen.
+Der Fortschritt zählt beseitigte dunkle Blöcke – eine Fackel erhellt mehrere Blöcke
+auf einmal, daher springt der Fortschritt in natürlichen, befriedigenden Schritten.
+Sobald ein Sub-Bereich komplett ausgeleuchtet ist, kann nach Cooldown ein anderer
+Sub-Bereich desselben Dorfes drankommen. Erst wenn im gesamten Dorf kein Sub-Bereich
+mit genug dunklen Blöcken mehr existiert, entfällt die Quest aus dem Angebotspool.
+
+→ Vollständiges Konzept: `Plannung/secure.md`
+
+### Aufgaben
+
+#### 1) VillagePerimeterService
+- [x] Service anlegen, der aus allen Villager-POIs derselben `villageId` einen Perimeter berechnet
+- [x] Bounding-Box aus Min/Max-X und Min/Max-Z aller POIs (`MEETING_POINT`, `HOME`, `JOB_SITE`, `POTENTIAL_JOB_SITE`)
+- [x] Margin von 16 Blöcken in jede Himmelsrichtung addieren
+- [x] Mindestgröße 40×40 sicherstellen (Fallback für Einzel-Villager)
+- [x] Fallback: wenn keine POIs existieren, Villager-Position als Zentrum mit festem Radius 32
+- [x] Perimeter-Caching mit TTL (z. B. 60 s), bis sich POIs oder Villager-Anzahl ändern
+
+#### 2) DarkBlockCache (Gesamt-Perimeter-Scan für Angebotsphase)
+- [x] Klasse, die den gesamten Dorfperimeter einmal scannt und `List<BlockPos>` aller dunklen spawnfähigen Oberflächen cacht
+- [x] Nur Oberfläche (oberster solider Block mit Luft darüber) – keine Höhlen
+- [x] Nur solide, opake Blöcke (`isSolid()` + `isOccluding()`) prüfen
+- [x] Nur Block-Light (`getLightFromBlocks()`) zählen, kein Sky-Light
+- [x] Cache-TTL 30 s (konfigurierbar), danach Neuscan
+- [x] Wird nur bei Quest-Anfrage genutzt, nicht bei jedem BlockPlace/BlockBreak
+
+#### 3) SubAreaSelector
+- [x] Aus `DarkBlockCache`-Liste alle möglichen 20×20 Sub-Bereiche enumerieren
+- [x] `darkCount` pro Sub-Bereich per Bounding-Box-Filter aus der Dark-Block-Liste ableiten
+- [x] Nur Sub-Bereiche mit `darkCount >= minDarkBlocks` (Default 10) als gültig führen
+- [x] Zufällig einen gültigen Sub-Bereich auswählen
+- [x] Sub-Bereich-Zentrum als Referenzpunkt für targetKey speichern
+- [x] Falls kein gültiger Sub-Bereich → Quest nicht anbieten, Fallback auf andere Quest
+
+#### 4) LightLevelScanner (Sub-Bereich-Scan während aktiver Quest)
+- [x] Scanner-Klasse, die den 20×20 Sub-Bereich Block für Block prüft (<5 ms, synchron)
+- [x] Gleiche Prüfregeln wie DarkBlockCache (Oberfläche, solid+occluding, Block-Light nur)
+- [x] `darkCount` für den Sub-Bereich liefern
+- [x] Bei jedem `BlockPlaceEvent` / `BlockBreakEvent` im Sub-Bereich: Vollscan des Sub-Bereichs
+
+#### 5) Angebotslogik im QuestOfferService
+- [x] Vor Erstellung eines SECURE-`village-light`-Offers `DarkBlockCache` konsultieren
+- [x] `SubAreaSelector` befragen, ob gültiger Sub-Bereich existiert
+- [x] Nur anbieten wenn gültiger Sub-Bereich gefunden, sonst SECURE-Template aus dem Pool streichen
+- [x] `initialDarkCount` und Sub-Bereich-Zentrum im Offer/Quest speichern
+- [x] Fallback: wenn kein gültiger Sub-Bereich → andere Quest aus dem Berufspool ziehen
+
+#### 6) QuestService-Erweiterung für `mode=village-light`
+- [x] Neuen Pfad in `advanceSecureQuests` für `mode=village-light`
+- [x] Bei `BlockPlaceEvent` (Spieler platziert Block im Sub-Bereich) Scan auslösen und Progress aktualisieren
+- [x] Bei `BlockBreakEvent` (Spieler baut Lichtquelle im Sub-Bereich ab) Scan auslösen und Progress ggf. zurücksetzen
+- [x] Bei Questgeber-Interaktion (Shift-Rechtsklick) während aktiver SECURE-Quest Scan auslösen
+- [x] Progress = `initialDarkCount - darkCount` (0 übrig = abgabebereit)
+- [x] Mehrere Spieler mit SECURE-Quest für dasselbe Dorf: jeder hat eigenen Sub-Bereich
+
+#### 7) QuestUiService-Anpassung (Bossbar & Marker)
+- [x] Bossbar zeigt "Quest: Bereich ausleuchten (beseitigt/initialDark)" statt "(platziert/ziel)"
+- [x] Sobald `darkCount == 0`: Bossbar zeigt "0 übrig | Abgabe: Shift-Rechtsklick"
+- [x] Bossbar-Richtung zeigt zum Questgeber (Abgabe) oder Sub-Bereich-Zentrum (während Bearbeitung)
+- [x] Kein Weltmarker für den Sub-Bereich (20×20 ist überschaubar)
+- [x] Optionaler GLOW-Effekt auf dunklen Blöcken im Sub-Bereich → ausgelagert nach Phase 9.5b
+
+#### 8) Ingame-Hinweise
+- [x] Bei Quest-Annahme: Chat-Nachricht mit Anzahl dunkler Stellen und Hinweis auf beliebige Lichtquellen
+- [x] Flavor-Text zur ungefähren Lage (z. B. „hinter der Schmiede", „südlich der Glocke") über AI-Bridge → durch village-light-Prompt-Intro abgedeckt
+- [x] Bei Erreichen von 0: Action-Bar "Der Bereich ist hell! Melde dich beim Questgeber!"
+- [x] Wenn keine SECURE-Quest angeboten wird: Dialog „Unser Dorf ist bereits sicher und hell." → null-Offer-Fallback greift
+- [x] Leise Bossbar-Updates ohne Chat-Spam bei jeder Platzierung
+
+#### 9) Datenmodell & Config
+- [x] `targetKey`-Format erweitern: `TORCH:world:v:250:-320:light:0:47:120:64:204` (material, world, villageId, mode, goal, initialDark, subCenterX, subCenterY, subCenterZ)
+- [x] `quest-offers.yml` neue Templates für CLERIC, CHIEF, MASON, ARMORER, TOOLSMITH, WEAPONSMITH mit `mode: village-light`
+- [x] `config.yml` um `subAreaSize`, `minDarkBlocks`, `perimeterMargin`, `darkListCacheTtlSeconds` erweitern
+- [x] Bestehende SECURE-Quests mit `mode: block` (altes Format) bleiben unverändert
+
+#### 10) Edge Cases & Robustheit
+- [x] Dorf hat sich vergrößert/verkleinert → Perimeter bei Cache-Ablauf neu berechnen (DarkBlockCache-TTL 30s)
+- [x] Creeper/Spieler zerstört Lichtquelle → nächster Scan erkennt neue dunkle Stellen → Sub-Bereich ggf. wieder gültig (onBlockBreak)
+- [x] Zwei Dörfer grenzen aneinander → `villageId`-Trennung verhindert Vermischung (VillageIdentityService)
+- [x] Spieler in anderer Welt (Nether/End) → Bossbar zeigt „Zielort: andere Welt" (buildSecureTargetHint)
+- [x] Kein Spieler hat aktive SECURE-Quest → keine unnötigen Scans (nur Event-/Interaktions-getriggert)
+- [x] Kein Meeting-Point / keine POIs → Fallback auf Villager-Position als Zentrum (VillagePerimeterService)
+- [x] Kein Sub-Bereich mit `darkCount >= minDarkBlocks` → Quest entfällt aus dem Pool (pickRandomSubArea → null-Offer)
+- [x] Sub-Bereich enthält zufällig kaum spawnfähige Blöcke (z. B. Wasser/Lava/Glass) → `darkCount >= minDarkBlocks` verhindert das
+
+#### 11) Integration & Test
+- [x] Scan-Auslöser an `BlockPlaceEvent` und `BlockBreakEvent` gebunden
+- [x] Manueller Check über Questgeber-Interaktion funktioniert
+- [x] Quest wird nur angeboten wenn gültiger Sub-Bereich existiert
+- [x] Quest erscheint wieder nach Zerstörung einer Lichtquelle im zuvor ausgeleuchteten Bereich
+- [x] Alle Lichtquellen-Typen werden korrekt erkannt (Torch, Lantern, Glowstone, etc.)
+- [x] Abgabe beim Questgeber schließt Quest ab und vergibt Belohnung
+- [x] 3–10 Fackeln reichen für einen typischen Sub-Bereich (kein Grind)
+
+### Ergebnis
+Die SECURE-Quest ist eine handliche, wiederholbare Aufgabe mit 5–10 Fackeln
+pro Durchlauf. Der Fortschritt zählt die tatsächliche Wirkung der Lichtquellen
+(eliminierte dunkle Blöcke), nicht stumpf platzierte Fackeln.
+
+---
+
 # Stabilisierung & UX-Härtung
 ## Ziel
 Questgrenzen absichern und Spieler bei Sonderfällen besser führen.
@@ -491,6 +609,8 @@ Mehr glaubwuerdige Antworten und Berufsidentitaet, ohne den Projektumfang unkont
 Dieser Block ist bewusst nachgelagert und soll erst folgen, wenn Dialog, Questfluss und Dorfkontext im aktuellen Villager-System stabil genug sind.
 
 ## Chief-Ausbaukonzept (freigegebener Scope)
+
+→ Ausführliches Q&A-Konzept: [Plannung/chief-ausbaukonzept.md](chief-ausbaukonzept.md)
 
 ### Beschlossene Leitplanken
 - [x] Fokus auf Idee 1: Chief-Rangstufen mit sichtbarer Evolutions-Optik
@@ -544,8 +664,56 @@ Dieser Block ist bewusst nachgelagert und soll erst folgen, wenn Dialog, Questfl
 ## Geplanter Ausbau
 - [x] Villager bleiben waehrend eines aktiven Gespraechs stehen, laufen nicht weg und schauen den Spieler an
 - [x] Chief-System vorerst behalten und ohne zusaetzliche Sondermechanik weiterlaufen lassen
-- [ ] Chiefs spaeter visuell klarer erkennbar machen, z. B. ueber eigene Textur oder klaren Look
-- [ ] Chiefs spaeter dezent freundlicher und questfreudiger als normale Villager feinjustieren, ohne sie mechanisch komplett abzuspalten
+
+## Chief_V2
+
+→ Vollständiges Konzept: [Plannung/chief-ausbaukonzept.md](chief-ausbaukonzept.md)
+
+### Phase A: Automatische Zuweisung + Rücken-Banner
+- [x] `ChiefProfile` um neue Felder erweitern: `entityUuid`, `crownedAt`, `mournedAt`, `isChief`, `profession`, `visualTier`, `biomeStyle`, `bannerPattern`, `legendaryUnlocked`, `legendaryLastActivated`
+- [x] `ChiefAutoAssignmentService` – prüft bei Serverstart/Chunk-Load, ob jedes Dorf einen Chief hat; weist automatisch zu (niedrigste Entity-UUID pro `villageId`)
+- [x] `ChiefVisualService` Grundgerüst – Rücken-Banner pro Chief als ItemDisplay spawnen
+- [x] `ChiefRepository.saveChief()` – `chiefs.yml` schreibend machen (Plugin schreibt, nicht manuell editieren)
+- [x] Dorf-Wappen: deterministisches Banner-Muster aus `villageId.hashCode()` ableiten
+- [x] Krönungs-Partikel: neuer Chief trägt ersten Tag (20 Min) goldene Dust/DustTransition-Partikel
+- [ ] `ReputationChangedEvent` als technisches Fundament einführen
+- [ ] `/chief info` zeigt aktuellen Chief des Dorfes an (auch ohne Argumente)
+- [ ] Test: Serverstart → jedes Dorf hat Chief mit Banner
+
+### Phase B: Tod, Trauer & Nachfolge
+- [ ] `ChiefDeathHandler` – `EntityDeathEvent` für Chief-Tod und `/chief unset` abfangen
+- [ ] Erbstück-Drop: toter Chief droppt Banner-Item mit Wappen + Rangstufen-Muster + Lore-Text
+- [ ] Trauerphase (3 Ingame-Tage / 60 Min): kein Chief, Dorf-Ruf=0, keine Quests, Trauer-Dialoge
+- [x] Trauer-Flora: dezente dunkle Dust-Partikel ziehen tagsüber durchs Dorf
+- [x] Bridge-seitige Trauer-Instruktion: `village_has_chief: false`, `village_mourning: true` im AI-Request + Prompt-Erweiterung
+- [x] Nachfolger-Auswahl nach Trauerphase: niedrigste UUID unter lebenden Villagern der `villageId`
+- [x] Ruf-Reset bei Tod/Unset: alle `reputation.yml`-Einträge der `speakerId` löschen
+- [ ] Chat-Durchsagen für Tod ("Der Häuptling ist gefallen...") und Krönung ("Ein neuer Häuptling erhebt sich...")
+- [ ] `ChiefMeetingObserver` – optionale Krönungs-Feuerwerk am Meeting-Point (>50% Villager versammelt)
+- [ ] Edge Cases: Chief-Tod in Nether/End, Admin `/chief set` während Trauerphase, kein lebender Villager im Dorf
+- [ ] Test: Chief töten oder `/chief unset` → 3 Tage Trauer → neuer Chief
+
+### Phase C: Rangstufen-Looks + Wappen-Interaktion
+- [ ] `ChiefVisualTier` Enum (TIER_0..3, LEGENDARY) mit Ruf-Schwellen 0/25/50/75/100
+- [ ] Banner-Pattern-Komplexität pro Stufe: schlicht → verfeinert → aufwändig → Elite
+- [ ] Equipment-Slot für Brustplatte (Leder, gefärbt) pro Rangstufe
+- [ ] `ChiefVisualService` reagiert auf `ReputationChangedEvent` → Live-Updates bei Rufsprüngen
+- [ ] Wappen-Kopie: Rechtsklick auf Chief (bei hohem Ruf) gibt Banner-Item mit Dorf-Wappen
+- [ ] Test: Ruf ändern → Banner und Kleidung upgraden live
+
+### Phase D: Biome-Paletten + Legendary-Form + Gefolge-Quests
+- [ ] `BiomeStyle`-Mapping: pro Biom-Familie (Plains, Taiga, Desert, Swamp, Savanna) eigene Farb- und Materialwelt
+- [ ] Biome-Look beeinflusst Banner-Palette, Stofffarbe und Detailmaterialien
+- [ ] Legendary-Freischaltlogik: Dorf- + Villager-Ruf 100/100 + Welt-Fortschritts-Flags
+- [ ] Legendary-Banner + permanente Leucht-Partikel
+- [ ] Gefolge-Quests als neue Quest-Kategorie: Leibwache, Golem-Wache, Mauerbau, Glocken-Stifter
+- [ ] Legendary-Questlinie mit exklusiven Rewards, langen Cooldowns, separater Config-Spur
+
+### Zurückgestellt
+- [ ] Idee 4: Saisonale Event-Mode-Chiefs (Halloween/Weihnachten)
+- [ ] Berufsspezifische Trauerfloskeln (Schmied: "Der Hammer schweigt.")
+- [ ] Chief-Emblem über der Tür
+- [ ] Chief-Glocke bei Raid
 
 ### Ergebnis
 Weniger Brueche zwischen Gespraech, NPC-Verhalten und langfristiger Rollenarchitektur.

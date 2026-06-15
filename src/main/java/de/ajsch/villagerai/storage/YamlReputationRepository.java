@@ -142,6 +142,27 @@ public final class YamlReputationRepository implements ReputationRepository {
         return loaded;
     }
 
+        @Override
+    public void removeAllSpeakerReputation(String speakerId) {
+        synchronized (lock) {
+            boolean changed = false;
+            ConfigurationSection playersSection = configuration.getConfigurationSection("players");
+            if (playersSection == null) {
+                return;
+            }
+            for (String playerUuid : playersSection.getKeys(false)) {
+                String path = "players." + playerUuid + ".speakers." + sanitizeKey(speakerId);
+                if (configuration.getConfigurationSection(path) != null) {
+                    configuration.set(path, null);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                saveConfiguration();
+            }
+        }
+    }
+
     private void saveConfiguration() {
         try {
             configuration.save(file);

@@ -6,7 +6,7 @@ import java.util.UUID;
 
 public interface QuestDifficultyPreferenceRepository {
 
-    Optional<QuestDifficultyPreference> findByPlayerAndChief(UUID playerUuid, String chiefId);
+    Optional<QuestDifficultyPreference> findByPlayerAndChief(UUID playerUuid, String speakerId);
 
     void savePreference(QuestDifficultyPreference preference);
 }

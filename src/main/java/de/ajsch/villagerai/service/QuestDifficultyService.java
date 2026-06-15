@@ -20,23 +20,23 @@ public final class QuestDifficultyService {
         this.settings = settings == null ? Settings.defaults() : settings;
     }
 
-    public QuestDifficultyPreference getPreference(UUID playerUuid, String chiefId) {
-        return repository.findByPlayerAndChief(playerUuid, chiefId)
+    public QuestDifficultyPreference getPreference(UUID playerUuid, String speakerId) {
+        return repository.findByPlayerAndChief(playerUuid, speakerId)
                 .map(this::normalizePreference)
-                .orElseGet(() -> new QuestDifficultyPreference(playerUuid, chiefId, 0, 0, 0L, 0L));
+                .orElseGet(() -> new QuestDifficultyPreference(playerUuid, speakerId, 0, 0, 0L, 0L));
     }
 
-    public QuestDifficultyPreference setPreferredDifficultyTier(UUID playerUuid, String chiefId, int tier) {
+    public QuestDifficultyPreference setPreferredDifficultyTier(UUID playerUuid, String speakerId, int tier) {
         long now = System.currentTimeMillis();
-        QuestDifficultyPreference updated = getPreference(playerUuid, chiefId)
+        QuestDifficultyPreference updated = getPreference(playerUuid, speakerId)
                 .withPreferredDifficultyTier(clampTier(tier), now);
         repository.savePreference(updated);
         return updated;
     }
 
-    public QuestDifficultyPreference recordSuggestedTier(UUID playerUuid, String chiefId, int tier) {
+    public QuestDifficultyPreference recordSuggestedTier(UUID playerUuid, String speakerId, int tier) {
         long now = System.currentTimeMillis();
-        QuestDifficultyPreference updated = getPreference(playerUuid, chiefId)
+        QuestDifficultyPreference updated = getPreference(playerUuid, speakerId)
                 .withSuggestion(clampTier(tier), now, now);
         repository.savePreference(updated);
         return updated;
@@ -120,7 +120,7 @@ public final class QuestDifficultyService {
         }
         return new QuestDifficultyPreference(
                 preference.playerUuid(),
-                preference.chiefId(),
+                preference.speakerId(),
                 preferredTier,
                 lastSuggestedTier,
                 preference.lastSuggestedAtEpochMillis(),

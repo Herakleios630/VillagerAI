@@ -1,12 +1,27 @@
 import json
+import logging
 import urllib.error
 import urllib.request
 
 from .prompt_builder import build_deepseek_messages
 from .reply_sanitizer import sanitize_reply_text
 
+logger = logging.getLogger("chief_ai_service.deepseek_client")
 
-def request_deepseek_reply(payload: dict, config: dict) -> str:
+
+def _shorten(text: str, limit: int = 500) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)] + "..."
+
+
+def request_deepseek_reply(
+    payload: dict,
+    config: dict,
+    memories: list[str] | None = None,
+    summary_text: str | None = None,
+    relevant_facts: list[dict] | None = None,
+) -> str:
     message = str(payload.get("playerMessage", "")).strip()
     if not message:
         return "Sprich klar, damit ich dich verstehen kann."
@@ -18,9 +33,17 @@ def request_deepseek_reply(payload: dict, config: dict) -> str:
             "DeepSeek API-Key fehlt. Setze den Key in config.json unter deepseek.api_key oder als Umgebungsvariable aus deepseek.api_key_env."
         )
 
+    messages = build_deepseek_messages(payload, config, memories=memories, summary_text=summary_text, relevant_facts=relevant_facts)
+    prompt_dump = json.dumps(messages, ensure_ascii=True)
+    logger.info(
+        "DeepSeek request prompt preview (%d chars): %s",
+        len(prompt_dump),
+        _shorten(prompt_dump, 500),
+    )
+
     request_body = json.dumps({
         "model": deepseek_config.get("model", "deepseek-chat"),
-        "messages": build_deepseek_messages(payload, config),
+        "messages": messages,
         "temperature": float(deepseek_config.get("temperature", 0.55)),
         "top_p": float(deepseek_config.get("top_p", 0.9)),
         "max_tokens": int(deepseek_config.get("max_tokens", 120)),
@@ -62,5 +85,7 @@ def request_deepseek_reply(payload: dict, config: dict) -> str:
     reply_text = str(message_payload.get("content", "")).strip()
     if not reply_text:
         raise RuntimeError("DeepSeek lieferte keine Antwort.")
+
+    logger.info("DeepSeek response length=%d chars", len(reply_text))
 
     return sanitize_reply_text(reply_text)

@@ -1,10 +1,9 @@
 package de.ajsch.villagerai.storage;
 
-import de.ajsch.villagerai.model.Chief;
+import de.ajsch.villagerai.model.ChiefAttributes;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -21,113 +20,100 @@ public final class YamlChiefRepository implements ChiefRepository {
 
     public YamlChiefRepository(JavaPlugin plugin) {
         this.plugin = plugin;
-        this.file = new File(plugin.getDataFolder(), "chiefs.yml");
+        this.file = new File(plugin.getDataFolder(), "chief-attributes.yml");
         this.configuration = loadConfiguration();
     }
 
     @Override
-    public Optional<Chief> findByEntityUuid(UUID entityUuid) {
+    public Optional<ChiefAttributes> findByEntityUuid(UUID entityUuid) {
         synchronized (lock) {
-            return readChief(entityUuid.toString());
+            return readAttributes(entityUuid.toString());
         }
     }
 
     @Override
-    public Collection<Chief> findAll() {
+    public Optional<ChiefAttributes> findActiveByVillageId(String villageId) {
         synchronized (lock) {
-            ConfigurationSection chiefsSection = configuration.getConfigurationSection("chiefs");
-            if (chiefsSection == null) {
+            ConfigurationSection section = configuration.getConfigurationSection("chief-attributes");
+            if (section == null) {
+                return Optional.empty();
+            }
+            for (String entityUuid : section.getKeys(false)) {
+                Optional<ChiefAttributes> attrs = readAttributes(entityUuid);
+                if (attrs.isPresent() && attrs.get().villageId().equals(villageId) && attrs.get().isActive()) {
+                    return attrs;
+                }
+            }
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public List<ChiefAttributes> findAll() {
+        synchronized (lock) {
+            ConfigurationSection section = configuration.getConfigurationSection("chief-attributes");
+            if (section == null) {
                 return List.of();
             }
 
-            List<Chief> chiefs = new ArrayList<>();
-            for (String entityUuid : chiefsSection.getKeys(false)) {
-                readChief(entityUuid).ifPresent(chiefs::add);
+            List<ChiefAttributes> attributes = new ArrayList<>();
+            for (String entityUuid : section.getKeys(false)) {
+                readAttributes(entityUuid).ifPresent(attributes::add);
             }
-            return List.copyOf(chiefs);
+            return List.copyOf(attributes);
         }
     }
 
     @Override
-    public void saveChief(Chief chief) {
+    public void save(ChiefAttributes attributes) {
         synchronized (lock) {
-            String path = "chiefs." + chief.entityUuid();
-            configuration.set(path + ".entity-uuid", chief.entityUuid().toString());
-            configuration.set(path + ".chief-id", chief.chiefId());
-            configuration.set(path + ".village-id", chief.villageId());
-            configuration.set(path + ".village-name", chief.villageName());
-            configuration.set(path + ".village-description", chief.villageDescription());
-            configuration.set(path + ".village-attributes", chief.villageAttributes());
-            configuration.set(path + ".village-biome", chief.villageBiome());
-            configuration.set(path + ".village-population-estimate", chief.villagePopulationEstimate());
-            configuration.set(path + ".village-event-summary", chief.villageEventSummary());
-            configuration.set(path + ".display-name", chief.displayName());
-            configuration.set(path + ".role", chief.role());
-            configuration.set(path + ".personality", chief.personality());
-            configuration.set(path + ".speech-tone", chief.speechTone());
-            configuration.set(path + ".behavior-hint", chief.behaviorHint());
-            configuration.set(path + ".greeting", chief.greeting());
-            configuration.set(path + ".world", chief.world());
-            configuration.set(path + ".x", chief.x());
-            configuration.set(path + ".y", chief.y());
-            configuration.set(path + ".z", chief.z());
+            String path = "chief-attributes." + attributes.entityUuid();
+            configuration.set(path + ".entity-uuid", attributes.entityUuid().toString());
+            configuration.set(path + ".chief-id", attributes.speakerId());
+            configuration.set(path + ".village-id", attributes.villageId());
+            configuration.set(path + ".crowned-at", attributes.crownedAt());
+            configuration.set(path + ".mourned-at", attributes.mournedAt());
+            configuration.set(path + ".is-active", attributes.isActive());
+            configuration.set(path + ".visual-tier", attributes.visualTier());
+            configuration.set(path + ".biome-style", attributes.biomeStyle());
+            configuration.set(path + ".banner-pattern", attributes.bannerPattern());
+            configuration.set(path + ".legendary-unlocked", attributes.legendaryUnlocked());
+            configuration.set(path + ".legendary-last-activated", attributes.legendaryLastActivated());
             saveConfiguration();
         }
     }
 
     @Override
-    public void removeChief(UUID entityUuid) {
+    public void deleteByEntityUuid(UUID entityUuid) {
         synchronized (lock) {
-            configuration.set("chiefs." + entityUuid, null);
+            configuration.set("chief-attributes." + entityUuid, null);
             saveConfiguration();
         }
     }
 
-    private Optional<Chief> readChief(String entityUuid) {
-        ConfigurationSection section = configuration.getConfigurationSection("chiefs." + entityUuid);
+    private Optional<ChiefAttributes> readAttributes(String entityUuid) {
+        ConfigurationSection section = configuration.getConfigurationSection("chief-attributes." + entityUuid);
         if (section == null) {
             return Optional.empty();
         }
 
-        String chiefId = section.getString("chief-id");
-        String villageId = section.getString("village-id");
-        String villageName = section.getString("village-name", "unser Dorf");
-        String villageDescription = section.getString("village-description", villageName + " ist ein Dorf in seiner gewohnten Umgebung.");
-        String villageAttributes = section.getString("village-attributes", "wenig erkennbare Besonderheiten");
-        String villageBiome = section.getString("village-biome", "unknown");
-        int villagePopulationEstimate = Math.max(1, section.getInt("village-population-estimate", 1));
-        String villageEventSummary = section.getString("village-event-summary", "Im Dorf gibt es aktuell kein herausstechendes Ereignis.");
-        String displayName = section.getString("display-name", "Haeuptling");
-        String role = section.getString("role", "Dorfhaeuptling");
-        String personality = section.getString("personality", "bedacht");
-        String speechTone = section.getString("speech-tone", "ruhig und wuerdevoll");
-        String behaviorHint = section.getString("behavior-hint", "spricht bedaechtig und mit natuerlicher Autoritaet");
-        String greeting = section.getString("greeting", "Willkommen in unserem Dorf.");
-        String world = section.getString("world", "unknown");
-        if (chiefId == null || villageId == null) {
+        String speakerId = section.getString("chief-id");
+        if (speakerId == null) {
             return Optional.empty();
         }
 
-        return Optional.of(new Chief(
+        return Optional.of(new ChiefAttributes(
                 UUID.fromString(entityUuid),
-                chiefId,
-                villageId,
-            villageName,
-            villageDescription,
-            villageAttributes,
-            villageBiome,
-            villagePopulationEstimate,
-            villageEventSummary,
-            displayName,
-            role,
-            personality,
-            speechTone,
-            behaviorHint,
-            greeting,
-                world,
-                section.getDouble("x"),
-                section.getDouble("y"),
-                section.getDouble("z")));
+                speakerId,
+                section.getString("village-id", "unknown"),
+                section.getLong("crowned-at", 0L),
+                section.getLong("mourned-at", 0L),
+                section.getBoolean("is-active", true),
+                section.getString("visual-tier", null),
+                section.getString("biome-style", null),
+                section.getString("banner-pattern", "default"),
+                section.getBoolean("legendary-unlocked", false),
+                section.getLong("legendary-last-activated", 0L)));
     }
 
     private YamlConfiguration loadConfiguration() {
@@ -136,7 +122,7 @@ public final class YamlChiefRepository implements ChiefRepository {
         }
 
         if (!file.exists()) {
-            plugin.saveResource("chiefs.yml", false);
+            plugin.saveResource("chief-attributes.yml", false);
         }
 
         return YamlConfiguration.loadConfiguration(file);
@@ -146,7 +132,7 @@ public final class YamlChiefRepository implements ChiefRepository {
         try {
             configuration.save(file);
         } catch (IOException exception) {
-            throw new IllegalStateException("Could not save chiefs.yml", exception);
+            throw new IllegalStateException("Could not save chief-attributes.yml", exception);
         }
     }
 }

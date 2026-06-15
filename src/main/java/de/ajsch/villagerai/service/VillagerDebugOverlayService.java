@@ -1,7 +1,7 @@
 package de.ajsch.villagerai.service;
 
 import de.ajsch.villagerai.VillageChiefPlugin;
-import de.ajsch.villagerai.model.Chief;
+import de.ajsch.villagerai.model.Speaker;
 import de.ajsch.villagerai.model.Quest;
 import de.ajsch.villagerai.model.VillagerContext;
 import de.ajsch.villagerai.model.VillageIdentity;
@@ -51,7 +51,7 @@ public final class VillagerDebugOverlayService {
     };
 
     private final VillageChiefPlugin plugin;
-    private final ChiefService chiefService;
+    private final SpeakerService speakerService;
     private final ConversationService conversationService;
     private final QuestService questService;
     private final ReputationService reputationService;
@@ -63,14 +63,14 @@ public final class VillagerDebugOverlayService {
 
     public VillagerDebugOverlayService(
             VillageChiefPlugin plugin,
-            ChiefService chiefService,
+            SpeakerService speakerService,
             ConversationService conversationService,
             QuestService questService,
             ReputationService reputationService,
             VillagerContextService villagerContextService,
             VillageIdentityService villageIdentityService) {
         this.plugin = plugin;
-        this.chiefService = chiefService;
+        this.speakerService = speakerService;
         this.conversationService = conversationService;
         this.questService = questService;
         this.reputationService = reputationService;
@@ -154,37 +154,30 @@ public final class VillagerDebugOverlayService {
             return lines;
         }
 
-        Chief speaker = chiefService.getConversationSpeaker(villager);
-        Optional<Chief> chief = chiefService.getChief(villager);
-        VillageIdentity villageIdentity = new VillageIdentity(
-                speaker.villageId(),
-            speaker.villageName(),
-            speaker.villageDescription(),
-            speaker.villageAttributes(),
-            speaker.villageBiome(),
-            speaker.villagePopulationEstimate(),
-            speaker.villageEventSummary());
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
+        boolean isChief = speaker != null && speaker.isChief();
+        VillageIdentity villageIdentity = villageIdentityService.resolve(villager);
         VillagerContext villagerContext = villagerContextService.resolve(villager, player.getUniqueId());
         Quest activeQuest = questService.findActiveQuest(player.getUniqueId()).orElse(null);
         boolean questMatchesTarget = activeQuest != null
                 && (activeQuest.villageId().equals(villageIdentity.villageId())
-                || speaker.chiefId().equals(activeQuest.chiefId()));
+                || speaker.speakerId().equals(activeQuest.speakerId()));
         String questSummary = activeQuest == null
                 ? "keine"
                 : activeQuest.type() + " " + activeQuest.progress() + "/" + activeQuest.goal()
                         + (questMatchesTarget ? " *" : "");
         boolean inConversation = conversationService.getConversation(player.getUniqueId())
-            .map(snapshot -> snapshot.chiefId().equals(speaker.chiefId()))
+            .map(snapshot -> snapshot.speakerId().equals(speaker.speakerId()))
             .orElse(false);
         String healthSummary = Math.round(villagerContext.currentHealth()) + "/" + Math.round(villagerContext.maxHealth());
         int villageReputationScore = reputationService.getVillageScore(player.getUniqueId(), villageIdentity.villageId());
-        int speakerReputationScore = reputationService.getSpeakerScore(player.getUniqueId(), speaker.chiefId());
+        int speakerReputationScore = reputationService.getSpeakerScore(player.getUniqueId(), speaker.speakerId());
         int combinedReputationScore = reputationService.getCombinedScore(
             player.getUniqueId(),
             villageIdentity.villageId(),
-            speaker.chiefId());
+            speaker.speakerId());
 
-        lines.add("Ziel: " + (chief.isPresent() ? "Chief" : "Villager") + " | " + speaker.chatName());
+        lines.add("Ziel: " + (isChief ? "Chief" : "Villager") + " | " + speaker.chatName());
         lines.add("Dorf: " + villageIdentity.villageName());
         lines.add("Biom: " + villageIdentity.villageBiome());
         lines.add("Bewohner: ~" + villageIdentity.villagePopulationEstimate());
@@ -196,7 +189,7 @@ public final class VillagerDebugOverlayService {
         lines.add("Ruftext: " + reputationService.getCombinedSummary(
             player.getUniqueId(),
             villageIdentity.villageId(),
-            speaker.chiefId()));
+            speaker.speakerId()));
         lines.add("HP: " + healthSummary + " | Essen: " + yesNo(villagerContext.ateRecently()));
         lines.add("Talk: " + yesNo(inConversation) + " | Regen: " + yesNo(villagerContext.isRaining()));
         lines.add("Quest: " + questSummary);

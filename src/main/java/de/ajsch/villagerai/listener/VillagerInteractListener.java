@@ -1,6 +1,6 @@
 package de.ajsch.villagerai.listener;
 
-import de.ajsch.villagerai.service.ChiefService;
+import de.ajsch.villagerai.service.SpeakerService;
 import de.ajsch.villagerai.service.ConversationService;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -13,17 +13,17 @@ import org.bukkit.inventory.EquipmentSlot;
 
 public final class VillagerInteractListener implements Listener {
 
-    private final ChiefService chiefService;
+    private final SpeakerService speakerService;
     private final ConversationService conversationService;
     private final boolean allowRegularVillagerConversations;
     private final boolean requireSneakForRegularVillagers;
 
     public VillagerInteractListener(
-            ChiefService chiefService,
+            SpeakerService speakerService,
             ConversationService conversationService,
             boolean allowRegularVillagerConversations,
             boolean requireSneakForRegularVillagers) {
-        this.chiefService = chiefService;
+        this.speakerService = speakerService;
         this.conversationService = conversationService;
         this.allowRegularVillagerConversations = allowRegularVillagerConversations;
         this.requireSneakForRegularVillagers = requireSneakForRegularVillagers;
@@ -50,6 +50,6 @@ public final class VillagerInteractListener implements Listener {
         conversationService.startConversation(
                 event.getPlayer(),
                 villager,
-            chiefService.getConversationSpeaker(villager));
+            speakerService.getSpeaker(villager).orElse(null));
     }
 }

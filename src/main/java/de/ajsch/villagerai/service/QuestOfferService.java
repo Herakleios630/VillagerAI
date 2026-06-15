@@ -1,21 +1,26 @@
 package de.ajsch.villagerai.service;
 
-import de.ajsch.villagerai.model.Chief;
+import de.ajsch.villagerai.model.Speaker;
 import de.ajsch.villagerai.model.Quest;
 import de.ajsch.villagerai.model.QuestType;
+import de.ajsch.villagerai.model.VillagePerimeter;
 import de.ajsch.villagerai.model.VillagerContext;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Logger;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Villager;
 import org.bukkit.potion.PotionType;
 
 public final class QuestOfferService {
@@ -23,6 +28,11 @@ public final class QuestOfferService {
     private final Logger logger;
     private final QuestService questService;
     private final QuestDifficultyService questDifficultyService;
+    private final VillageIdentityService villageIdentityService;
+    private final VillagePerimeterService villagePerimeterService;
+    private final DarkBlockCache darkBlockCache;
+    private volatile int subAreaSize;
+    private volatile int minDarkBlocks;
     private volatile Map<String, List<OfferTemplate>> templatesByProfession;
     private volatile List<OfferTemplate> defaultTemplates;
 
@@ -30,11 +40,26 @@ public final class QuestOfferService {
             Logger logger,
             QuestService questService,
             QuestDifficultyService questDifficultyService,
-            ConfigurationSection templatesSection) {
+            ConfigurationSection templatesSection,
+            VillageIdentityService villageIdentityService,
+            VillagePerimeterService villagePerimeterService,
+            DarkBlockCache darkBlockCache,
+            int subAreaSize,
+            int minDarkBlocks) {
         this.logger = logger;
         this.questService = questService;
         this.questDifficultyService = questDifficultyService;
+        this.villageIdentityService = villageIdentityService;
+        this.villagePerimeterService = villagePerimeterService;
+        this.darkBlockCache = darkBlockCache;
+        this.subAreaSize = Math.max(10, subAreaSize);
+        this.minDarkBlocks = Math.max(1, minDarkBlocks);
         reloadTemplates(templatesSection);
+    }
+
+    public synchronized void reloadVillageLightSettings(int subAreaSize, int minDarkBlocks) {
+        this.subAreaSize = Math.max(10, subAreaSize);
+        this.minDarkBlocks = Math.max(1, minDarkBlocks);
     }
 
     public synchronized void reloadTemplates(ConfigurationSection templatesSection) {
@@ -43,28 +68,28 @@ public final class QuestOfferService {
         this.defaultTemplates = config.defaultTemplates();
     }
 
-    public QuestOffer createOffer(UUID playerUuid, Chief chief, VillagerContext villagerContext, int villageReputationScore) {
+    public QuestOffer createOffer(UUID playerUuid, Speaker chief, VillagerContext villagerContext, int villageReputationScore) {
         String profession = villagerContext.profession() == null
                 ? "NONE"
                 : villagerContext.profession().toUpperCase(Locale.ROOT);
         List<OfferTemplate> templates = templatesByProfession.getOrDefault(profession, defaultTemplates);
-        int preferredTier = questDifficultyService.getPreference(playerUuid, chief.chiefId()).preferredDifficultyTier();
+        int preferredTier = questDifficultyService.getPreference(playerUuid, chief.speakerId()).preferredDifficultyTier();
         int unlockedTier = questDifficultyService.resolveUnlockedTier(villageReputationScore);
         int selectedTier = Math.min(preferredTier, unlockedTier);
         List<OfferTemplate> selectedTemplates = selectTemplatesForTier(templates, selectedTier);
-        int variant = Math.floorMod(playerUuid.hashCode() ^ chief.chiefId().hashCode(), selectedTemplates.size());
-        questDifficultyService.recordSuggestedTier(playerUuid, chief.chiefId(), selectedTierForTemplates(selectedTemplates));
+        int variant = Math.floorMod(playerUuid.hashCode() ^ chief.speakerId().hashCode(), selectedTemplates.size());
+        questDifficultyService.recordSuggestedTier(playerUuid, chief.speakerId(), selectedTierForTemplates(selectedTemplates));
         return selectedTemplates.get(variant).toOffer(chief, this);
     }
 
-    public QuestOffer createOfferForTier(UUID playerUuid, Chief chief, VillagerContext villagerContext, int desiredTier) {
+    public QuestOffer createOfferForTier(UUID playerUuid, Speaker chief, VillagerContext villagerContext, int desiredTier) {
         String profession = villagerContext.profession() == null
                 ? "NONE"
                 : villagerContext.profession().toUpperCase(Locale.ROOT);
         List<OfferTemplate> templates = templatesByProfession.getOrDefault(profession, defaultTemplates);
         List<OfferTemplate> selectedTemplates = selectTemplatesForTier(templates, questDifficultyService.clampTier(desiredTier));
-        int variant = Math.floorMod(playerUuid.hashCode() ^ chief.chiefId().hashCode(), selectedTemplates.size());
-        questDifficultyService.recordSuggestedTier(playerUuid, chief.chiefId(), selectedTierForTemplates(selectedTemplates));
+        int variant = Math.floorMod(playerUuid.hashCode() ^ chief.speakerId().hashCode(), selectedTemplates.size());
+        questDifficultyService.recordSuggestedTier(playerUuid, chief.speakerId(), selectedTierForTemplates(selectedTemplates));
         return selectedTemplates.get(variant).toOffer(chief, this);
     }
 
@@ -93,7 +118,7 @@ public final class QuestOfferService {
         return templates.stream().map(OfferTemplate::difficultyTier).max(Comparator.naturalOrder()).orElse(0);
     }
 
-    public Quest acceptOffer(Player player, Chief chief, QuestOffer offer) {
+    public Quest acceptOffer(Player player, Speaker chief, QuestOffer offer) {
         return switch (offer.type()) {
             case BREW -> questService.activateBrewQuest(player.getUniqueId(), chief, offer.potionType(), offer.amount(), offer.difficultyTier());
             case FETCH -> questService.activateFetchQuest(player, chief, offer.material(), offer.amount(), offer.difficultyTier());
@@ -117,26 +142,41 @@ public final class QuestOfferService {
                     offer.targetZ(),
                     offer.radius(),
                     offer.difficultyTier());
-            case SECURE -> questService.activateSecureQuest(
-                    player.getUniqueId(),
-                    chief,
-                    offer.material(),
-                    offer.amount(),
-                    offer.worldName(),
-                    offer.targetX(),
-                    offer.targetZ(),
-                    offer.radius(),
-                    offer.difficultyTier());
+            case SECURE -> {
+                    if (offer.targetKey() != null && offer.targetKey().contains("|light|")) {
+                        yield questService.activateSecureQuestByTargetKey(
+                                player.getUniqueId(),
+                                chief,
+                                offer.material(),
+                                0,
+                                offer.worldName(),
+                                offer.targetX(),
+                                offer.targetZ(),
+                                offer.radius(),
+                                offer.difficultyTier(),
+                                offer.targetKey());
+                    }
+                    yield questService.activateSecureQuest(
+                            player.getUniqueId(),
+                            chief,
+                            offer.material(),
+                            offer.amount(),
+                            offer.worldName(),
+                            offer.targetX(),
+                            offer.targetZ(),
+                            offer.radius(),
+                            offer.difficultyTier());
+                }
             case DELIVER, TALK -> questService.activateTalkQuest(player.getUniqueId(), chief, offer.title(), offer.description());
         };
     }
 
-    private QuestOffer repairOffer(Material material, int amount, String intro, Chief chief, int difficultyTier) {
+    private QuestOffer repairOffer(Material material, int amount, String intro, Speaker chief, int difficultyTier) {
         String materialName = formatMaterial(material);
         return new QuestOffer(
                 QuestType.REPAIR,
                 "Repariere mit " + amount + " " + materialName,
-                "Bringe " + amount + " " + materialName + " zu " + chief.chatName() + ", damit wir Reparaturen schaffen.",
+                "Bringe " + amount + " " + materialName + " zu " + chief.displayName() + ", damit wir Reparaturen schaffen.",
                 intro + " Bring mir " + amount + " " + materialName + " fuer die Reparaturen. Uebernimmst du das?",
                 "Gut. Mit dem Material reparieren wir das Dorf schnell.",
                 material,
@@ -147,15 +187,16 @@ public final class QuestOfferService {
                 0,
                 0,
                 null,
-                difficultyTier);
+                difficultyTier,
+                material.name() + ":" + amount);
     }
 
-    private QuestOffer buildOffer(Material material, int amount, String intro, Chief chief, int difficultyTier) {
+    private QuestOffer buildOffer(Material material, int amount, String intro, Speaker chief, int difficultyTier) {
         String materialName = formatMaterial(material);
         return new QuestOffer(
                 QuestType.BUILD,
                 "Baue " + amount + " " + materialName,
-                "Platziere " + amount + " " + materialName + " und melde dich danach wieder bei " + chief.chatName() + ".",
+                "Platziere " + amount + " " + materialName + " und melde dich danach wieder bei " + chief.displayName() + ".",
                 intro + " Platziere " + amount + " " + materialName + " fuer unser Dorf. Bist du dabei?",
                 "Abgemacht. Bau die Bloecke und melde dich danach wieder.",
                 material,
@@ -166,15 +207,16 @@ public final class QuestOfferService {
                 0,
                 0,
                 null,
-                difficultyTier);
+                difficultyTier,
+                material.name());
     }
 
-    private QuestOffer breedOffer(EntityType entityType, int amount, String intro, Chief chief, int difficultyTier) {
+    private QuestOffer breedOffer(EntityType entityType, int amount, String intro, Speaker chief, int difficultyTier) {
         String entityName = formatEntityType(entityType);
         return new QuestOffer(
                 QuestType.BREED,
                 "Zuechte " + amount + " " + entityName,
-                "Zuechte " + amount + " " + entityName + " fuer " + chief.chatName() + ".",
+                "Zuechte " + amount + " " + entityName + " fuer " + chief.displayName() + ".",
                 intro + " Zuechte " + amount + " " + entityName + " fuer unser Dorf. Uebernimmst du das?",
                 "Gut. Sorge fuer Nachwuchs und berichte dann wieder.",
                 null,
@@ -185,15 +227,16 @@ public final class QuestOfferService {
                 0,
                 0,
                 null,
-                difficultyTier);
+                difficultyTier,
+                entityType.name());
     }
 
-    private QuestOffer brewOffer(PotionType potionType, int amount, String intro, Chief chief, int difficultyTier) {
+    private QuestOffer brewOffer(PotionType potionType, int amount, String intro, Speaker chief, int difficultyTier) {
         String potionName = formatPotionType(potionType);
         return new QuestOffer(
                 QuestType.BREW,
                 "Braue " + amount + " " + potionName,
-                "Bringe " + amount + " " + potionName + " zu " + chief.chatName() + ".",
+                "Bringe " + amount + " " + potionName + " zu " + chief.displayName() + ".",
                 intro + " Braue mir " + amount + " " + potionName + " und bring sie dann zu mir. Willst du das uebernehmen?",
                 "Gut. Dann braue " + amount + " " + potionName + " und bring sie mir danach.",
                 null,
@@ -204,15 +247,16 @@ public final class QuestOfferService {
                 0,
                 0,
                 potionType,
-                difficultyTier);
+                difficultyTier,
+                potionType.name() + ":" + amount);
     }
 
-    private QuestOffer fetchOffer(Material material, int amount, String intro, Chief chief, int difficultyTier) {
+    private QuestOffer fetchOffer(Material material, int amount, String intro, Speaker chief, int difficultyTier) {
         String materialName = formatMaterial(material);
         return new QuestOffer(
                 QuestType.FETCH,
                 "Sammle " + amount + " " + materialName,
-                "Besorge " + amount + " " + materialName + " und melde dich danach wieder bei " + chief.chatName() + ".",
+                "Besorge " + amount + " " + materialName + " und melde dich danach wieder bei " + chief.displayName() + ".",
                 intro + " Besorge mir " + amount + " " + materialName + ". Willst du das uebernehmen?",
                 "Gut. Dann bring mir " + amount + " " + materialName + " und melde dich danach wieder.",
                 material,
@@ -223,15 +267,16 @@ public final class QuestOfferService {
                 0,
                 0,
                 null,
-                difficultyTier);
+                difficultyTier,
+                material.name() + ":" + amount);
     }
 
-            private QuestOffer killOffer(EntityType entityType, int amount, String intro, Chief chief, int difficultyTier) {
+            private QuestOffer killOffer(EntityType entityType, int amount, String intro, Speaker chief, int difficultyTier) {
         String entityName = formatEntityType(entityType);
         return new QuestOffer(
                 QuestType.KILL,
                 "Toete " + amount + " " + entityName,
-                "Besiege " + amount + " " + entityName + " fuer " + chief.chatName() + ".",
+                "Besiege " + amount + " " + entityName + " fuer " + chief.displayName() + ".",
                 intro + " Besiege " + amount + " " + entityName + " und komm dann zu mir zurueck. Willst du das uebernehmen?",
                 "Abgemacht. Erledige " + amount + " " + entityName + " und berichte mir danach.",
                 null,
@@ -242,10 +287,11 @@ public final class QuestOfferService {
                 0,
                 0,
                 null,
-                difficultyTier);
+                difficultyTier,
+                entityType.name());
     }
 
-            private QuestOffer visitOffer(Chief chief, int distance, int radius, int difficultyTier) {
+            private QuestOffer visitOffer(Speaker chief, int distance, int radius, int difficultyTier) {
         int baseX = (int) Math.round(chief.x());
         int baseZ = (int) Math.round(chief.z());
         int targetX = baseX + distance;
@@ -254,7 +300,7 @@ public final class QuestOfferService {
                 QuestType.VISIT,
                 "Reise nach X " + targetX + " / Z " + targetZ,
                 "Erreiche den Ort bei X " + targetX + " / Z " + targetZ + " und melde dich danach wieder bei "
-                        + chief.chatName() + ".",
+                        + chief.displayName() + ".",
                 "Ich will wissen, was bei X " + targetX + " / Z " + targetZ + " los ist. Sieh dort nach und komm dann zu mir zurueck. Willst du das uebernehmen?",
                 "Gut. Sieh dich dort um und komm danach wieder zu mir.",
                 null,
@@ -265,10 +311,11 @@ public final class QuestOfferService {
                 targetZ,
                 radius,
                 null,
-                difficultyTier);
+                difficultyTier,
+                chief.world() + ":" + targetX + ":" + targetZ + ":" + radius);
     }
 
-    private QuestOffer exploreOffer(Chief chief, int distance, int radius, int difficultyTier) {
+    private QuestOffer exploreOffer(Speaker chief, int distance, int radius, int difficultyTier) {
         int baseX = (int) Math.round(chief.x());
         int baseZ = (int) Math.round(chief.z());
         int targetX = baseX + distance;
@@ -277,7 +324,7 @@ public final class QuestOfferService {
                 QuestType.EXPLORE,
                 "Erkunde X " + targetX + " / Z " + targetZ,
                 "Erreiche den Ort bei X " + targetX + " / Z " + targetZ + " und melde dich danach wieder bei "
-                        + chief.chatName() + ".",
+                        + chief.displayName() + ".",
                 "Ich brauche einen Blick auf die Umgebung bei X " + targetX + " / Z " + targetZ
                         + ". Sieh dort nach und komm dann zu mir zurueck. Willst du das uebernehmen?",
                 "Gut. Sieh dich dort um und komm danach wieder zu mir.",
@@ -289,10 +336,11 @@ public final class QuestOfferService {
                 targetZ,
                 radius,
                 null,
-                difficultyTier);
+                difficultyTier,
+                chief.world() + ":" + targetX + ":" + targetZ + ":" + radius);
     }
 
-    private QuestOffer secureOffer(Chief chief, Material material, int amount, int distance, int radius, String intro, int difficultyTier) {
+    private QuestOffer secureOffer(Speaker chief, Material material, int amount, int distance, int radius, String intro, int difficultyTier) {
         int baseX = (int) Math.round(chief.x());
         int baseZ = (int) Math.round(chief.z());
         int targetX = baseX + distance;
@@ -302,7 +350,7 @@ public final class QuestOfferService {
                 QuestType.SECURE,
                 "Sichere mit " + amount + " " + materialName,
                 "Platziere " + amount + " " + materialName + " bei X " + targetX + " / Z " + targetZ
-                        + " und melde dich danach wieder bei " + chief.chatName() + ".",
+                        + " und melde dich danach wieder bei " + chief.displayName() + ".",
                 "Ein wenig weiter draussen bei X " + targetX + " / Z " + targetZ + " ist es nicht sicher. "
                         + intro + " Platziere dort " + amount + " " + materialName + ". Bist du dabei?",
                 "Gut. Sichere die Stelle bei X " + targetX + " / Z " + targetZ + " mit " + amount + " " + materialName + " und melde dich dann wieder.",
@@ -314,7 +362,78 @@ public final class QuestOfferService {
                 targetZ,
                 radius,
                 null,
-                difficultyTier);
+                difficultyTier,
+                material.name() + ":" + chief.world() + ":" + targetX + ":" + targetZ + ":" + radius);
+    }
+
+    public QuestOffer villageLightSecureOffer(Speaker chief, Material themeMaterial, String intro, int difficultyTier) {
+        // 1) Resolve village perimeter
+        // We need a Villager entity to compute the perimeter. The chief may or may not have
+        // a loaded Villager. We search the server for a villager with matching speakerId.
+        Villager referenceVillager = findVillagerBySpeakerUuid(chief.entityUuid());
+        if (referenceVillager == null) {
+            logger.fine("village-light offer: could not find loaded villager for chief " + chief.speakerId() + " – no offer");
+            return null;
+        }
+
+        String villageId = chief.villageId();
+        VillagePerimeter perimeter = villagePerimeterService.computePerimeter(referenceVillager, villageId, villageIdentityService);
+        if (perimeter == null || perimeter.world() == null) {
+            logger.fine("village-light offer: no perimeter for " + villageId + " – no offer");
+            return null;
+        }
+
+        // 2) Check if there is a valid sub-area with enough dark blocks
+        Optional<DarkBlockCache.SubAreaResult> result = darkBlockCache.pickRandomSubArea(
+                perimeter, subAreaSize, minDarkBlocks);
+        if (result.isEmpty()) {
+            logger.fine("village-light offer: no valid subArea in " + villageId + " – no offer");
+            return null;
+        }
+
+        DarkBlockCache.SubAreaResult subArea = result.get();
+        String materialName = formatMaterial(themeMaterial);
+        String worldName = perimeter.worldName();
+        int cx = subArea.center().x();
+        int cy = subArea.center().y();
+        int cz = subArea.center().z();
+
+        String title = "Bereich ausleuchten (" + subArea.initialDarkCount() + " dunkle Stellen)";
+        String description = "Erhelle einen zufaelligen Sub-Bereich im Dorf " + (chief.villageName() != null ? chief.villageName() : "") + " solange noch kein dunkler Fleck uebrig ist, und melde dich danach wieder bei " + chief.displayName() + ".";
+        String promptText = intro + " Wir haben " + subArea.initialDarkCount() + " dunkle Stellen zu vertreiben. Uebernimmst du das?";
+        String acceptedReply = "Gut. Mach die Ecke hell und melde dich danach wieder bei mir.";
+
+        // targetKey format for village-light (pipe-separated to avoid colon conflicts with villageId):
+        // material|world|villageId|light|goal|initialDark|subCenterX|subCenterY|subCenterZ
+        String targetKey = materialName + "|" + worldName + "|" + villageId + "|light|0|"
+                + subArea.initialDarkCount() + "|" + cx + "|" + cy + "|" + cz;
+        return new QuestOffer(
+                QuestType.SECURE,
+                title,
+                description,
+                promptText,
+                acceptedReply,
+                themeMaterial,
+                0,
+                null,
+                worldName,
+                cx,
+                cz,
+                subAreaSize,
+                null,
+                difficultyTier,
+                targetKey);
+    }
+
+    private Villager findVillagerBySpeakerUuid(UUID entityUuid) {
+        for (org.bukkit.World world : org.bukkit.Bukkit.getWorlds()) {
+            for (Villager villager : world.getEntitiesByClass(Villager.class)) {
+                if (villager.getUniqueId().equals(entityUuid)) {
+                    return villager;
+                }
+            }
+        }
+        return null;
     }
 
     private String formatMaterial(Material material) {
@@ -452,11 +571,12 @@ public final class QuestOfferService {
                 int amount = intValue(rawEntry.get("amount"), 1);
                 int distance = intValue(rawEntry.get("distance"), 30);
                 int radius = intValue(rawEntry.get("radius"), 5);
+                String mode = stringValue(rawEntry.get("mode"));
                 if (material == null || material.isAir() || !material.isBlock() || amount <= 0 || distance <= 0 || radius <= 0) {
                     logger.warning("SECURE-Template in '" + scopeName + "' ignoriert: gueltiges Block-Material, amount > 0, distance > 0 und radius > 0 sind Pflicht.");
                     yield null;
                 }
-                yield new OfferTemplate(type, intro, material, null, amount, distance, radius, null, Math.max(0, intValue(rawEntry.get("difficulty-tier"), 0)));
+                yield new OfferTemplate(type, intro, material, null, amount, distance, radius, null, Math.max(0, intValue(rawEntry.get("difficulty-tier"), 0)), mode);
             }
             default -> null;
         };
@@ -530,9 +650,15 @@ public final class QuestOfferService {
             int distance,
             int radius,
             PotionType potionType,
-            int difficultyTier) {
+            int difficultyTier,
+            String mode) {
 
-        private QuestOffer toOffer(Chief chief, QuestOfferService service) {
+        private OfferTemplate(QuestType type, String intro, Material material, EntityType entityType,
+                int amount, int distance, int radius, PotionType potionType, int difficultyTier) {
+            this(type, intro, material, entityType, amount, distance, radius, potionType, difficultyTier, null);
+        }
+
+        private QuestOffer toOffer(Speaker chief, QuestOfferService service) {
             return switch (type) {
                 case BREW -> service.brewOffer(potionType, amount, intro, chief, difficultyTier);
                 case FETCH -> service.fetchOffer(material, amount, intro, chief, difficultyTier);
@@ -542,7 +668,12 @@ public final class QuestOfferService {
                 case KILL -> service.killOffer(entityType, amount, intro, chief, difficultyTier);
                 case VISIT -> service.visitOffer(chief, distance, radius, difficultyTier);
                 case EXPLORE -> service.exploreOffer(chief, distance, radius, difficultyTier);
-                case SECURE -> service.secureOffer(chief, material, amount, distance, radius, intro, difficultyTier);
+                case SECURE -> {
+                    if ("village-light".equals(mode)) {
+                        yield service.villageLightSecureOffer(chief, material, intro, difficultyTier);
+                    }
+                    yield service.secureOffer(chief, material, amount, distance, radius, intro, difficultyTier);
+                }
                 default -> service.fetchOffer(Material.BREAD, 8, intro, chief, difficultyTier);
             };
         }
@@ -562,6 +693,7 @@ public final class QuestOfferService {
             int targetZ,
             int radius,
             PotionType potionType,
-            int difficultyTier) {
+            int difficultyTier,
+            String targetKey) {
     }
 }

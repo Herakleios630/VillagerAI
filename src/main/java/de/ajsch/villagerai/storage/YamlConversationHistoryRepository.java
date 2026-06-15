@@ -1,6 +1,6 @@
 package de.ajsch.villagerai.storage;
 
-import de.ajsch.villagerai.model.Chief;
+import de.ajsch.villagerai.model.Speaker;
 import de.ajsch.villagerai.model.ConversationHistory;
 import de.ajsch.villagerai.model.ConversationRole;
 import de.ajsch.villagerai.model.ConversationTurn;
@@ -34,9 +34,9 @@ public final class YamlConversationHistoryRepository implements ConversationHist
     }
 
     @Override
-    public Optional<ConversationHistory> findHistory(UUID playerUuid, String chiefId) {
+    public Optional<ConversationHistory> findHistory(UUID playerUuid, String speakerId) {
         synchronized (lock) {
-            return readHistory(playerUuid.toString(), chiefId);
+            return readHistory(playerUuid.toString(), speakerId);
         }
     }
 
@@ -49,21 +49,21 @@ public final class YamlConversationHistoryRepository implements ConversationHist
             }
 
             List<ConversationHistory> histories = new ArrayList<>();
-            for (String chiefId : playerSection.getKeys(false)) {
-                readHistory(playerUuid.toString(), chiefId).ifPresent(histories::add);
+            for (String speakerId : playerSection.getKeys(false)) {
+                readHistory(playerUuid.toString(), speakerId).ifPresent(histories::add);
             }
             return List.copyOf(histories);
         }
     }
 
-    @Override
-    public void appendTurn(UUID playerUuid, Chief chief, ConversationTurn turn) {
+        @Override
+    public void appendTurn(UUID playerUuid, Speaker speaker, ConversationTurn turn) {
         synchronized (lock) {
-            ConversationHistory currentHistory = readHistory(playerUuid.toString(), chief.chiefId())
+            ConversationHistory currentHistory = readHistory(playerUuid.toString(), speaker.speakerId())
                     .orElseGet(() -> new ConversationHistory(
                             playerUuid,
-                            chief.chiefId(),
-                            chief.villageId(),
+                            speaker.speakerId(),
+                            speaker.villageId(),
                             List.of(),
                             turn.timestampEpochMillis()));
 
@@ -73,10 +73,10 @@ public final class YamlConversationHistoryRepository implements ConversationHist
                 turns = new ArrayList<>(turns.subList(turns.size() - maxTurnsPerHistory, turns.size()));
             }
 
-            String basePath = basePath(playerUuid.toString(), chief.chiefId());
+            String basePath = basePath(playerUuid.toString(), speaker.speakerId());
             configuration.set(basePath + ".player-uuid", playerUuid.toString());
-            configuration.set(basePath + ".chief-id", chief.chiefId());
-            configuration.set(basePath + ".village-id", chief.villageId());
+            configuration.set(basePath + ".chief-id", speaker.speakerId());
+            configuration.set(basePath + ".village-id", speaker.villageId());
             configuration.set(basePath + ".updated-at-epoch-millis", turn.timestampEpochMillis());
             configuration.set(basePath + ".turns", serializeTurns(turns));
             saveConfiguration();
@@ -84,15 +84,15 @@ public final class YamlConversationHistoryRepository implements ConversationHist
     }
 
     @Override
-    public void clearHistory(UUID playerUuid, String chiefId) {
+    public void clearHistory(UUID playerUuid, String speakerId) {
         synchronized (lock) {
-            configuration.set(basePath(playerUuid.toString(), chiefId), null);
+            configuration.set(basePath(playerUuid.toString(), speakerId), null);
             saveConfiguration();
         }
     }
 
-    private Optional<ConversationHistory> readHistory(String playerUuid, String chiefId) {
-        ConfigurationSection section = configuration.getConfigurationSection(basePath(playerUuid, chiefId));
+    private Optional<ConversationHistory> readHistory(String playerUuid, String speakerId) {
+        ConfigurationSection section = configuration.getConfigurationSection(basePath(playerUuid, speakerId));
         if (section == null) {
             return Optional.empty();
         }
@@ -116,7 +116,7 @@ public final class YamlConversationHistoryRepository implements ConversationHist
 
         return Optional.of(new ConversationHistory(
                 UUID.fromString(section.getString("player-uuid", playerUuid)),
-                section.getString("chief-id", chiefId),
+                section.getString("chief-id", speakerId),
                 section.getString("village-id", "unknown"),
                 turns,
                 section.getLong("updated-at-epoch-millis", 0L)));
@@ -134,8 +134,8 @@ public final class YamlConversationHistoryRepository implements ConversationHist
         return serializedTurns;
     }
 
-    private String basePath(String playerUuid, String chiefId) {
-        return "histories." + playerUuid + "." + chiefId;
+    private String basePath(String playerUuid, String speakerId) {
+        return "histories." + playerUuid + "." + speakerId;
     }
 
     private YamlConfiguration loadConfiguration() {

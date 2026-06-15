@@ -1,0 +1,7 @@
+Prüfe, ob diese beiden Fakten inhaltlich identisch sind.
+
+Fakt A: {type_a}: {value_a} (Beleg: "{evidence_a}")
+Fakt B: {type_b}: {value_b} (Beleg: "{evidence_b}")
+
+Sind beide Fakten gleich oder meinen sie dasselbe?
+Antworte NUR mit "ja" oder "nein".

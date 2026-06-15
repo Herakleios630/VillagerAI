@@ -1,39 +1,375 @@
-def build_ollama_prompt(payload: dict, config: dict) -> str:
+def build_ollama_prompt(
+    payload: dict,
+    config: dict,
+    memories: list[dict] | None = None,
+    summary_text: str | None = None,
+    relevant_facts: list[dict] | None = None,
+) -> str:
     system_prompt = resolve_system_prompt(payload, config, "ollama")
-    return f"{system_prompt}\n{build_context_prompt(payload, config)}"
+    return f"{system_prompt}\n{build_context_prompt(payload, config, memories=memories, summary_text=summary_text, relevant_facts=relevant_facts)}"
 
 
-def build_deepseek_messages(payload: dict, config: dict) -> list[dict[str, str]]:
+def build_deepseek_messages(
+    payload: dict,
+    config: dict,
+    memories: list[dict] | None = None,
+    summary_text: str | None = None,
+    relevant_facts: list[dict] | None = None,
+) -> list[dict[str, str]]:
     return [
         {"role": "system", "content": resolve_system_prompt(payload, config, "deepseek")},
-        {"role": "user", "content": build_context_prompt(payload, config)},
+        {"role": "user", "content": build_context_prompt(payload, config, memories=memories, summary_text=summary_text, relevant_facts=relevant_facts)},
     ]
 
 
 def resolve_system_prompt(payload: dict, config: dict, provider_name: str) -> str:
-    payload_prompt = str(payload.get("systemPrompt", "")).strip()
-    if payload_prompt:
-        return payload_prompt
-
     provider_config = config.get(provider_name, {})
-    return str(provider_config.get(
+    base_prompt = str(provider_config.get(
         "system_prompt",
         "Du bist ein glaubwuerdiger Sprecher in einem Minecraft-Dorf. Antworte passend zur Rolle, kurz und natuerlich auf Deutsch.",
     ))
 
+    # Payload-SystemPrompt ersetzt den Config-Prompt, wenn gesetzt
+    payload_prompt = str(payload.get("systemPrompt", "")).strip()
+    if payload_prompt:
+        return payload_prompt
 
-def build_context_prompt(payload: dict, config: dict) -> str:
-    chief_id = str(payload.get("chiefId", "unbekannt"))
-    village_id = str(payload.get("villageId", "unbekannt"))
-    chief_name = str(payload.get("chiefName", "Haeuptling"))
-    chief_role = str(payload.get("chiefRole", "Dorfhaeuptling"))
-    chief_personality = str(payload.get("chiefPersonality", "bedacht"))
-    chief_greeting = str(payload.get("chiefGreeting", "Willkommen in unserem Dorf."))
-    village_attributes = str(payload.get("villageAttributes") or "keine groben Dorfmerkmale bekannt")
+    return base_prompt
+
+
+def check_memory_trigger(message: str, trigger_phrases: list[str]) -> bool:
+    """Prüft, ob die Spielernachricht eine Memory-Trigger-Phrase enthält."""
+    import re
+
+    if not message or not trigger_phrases:
+        return False
+
+    lowered = message.strip().lower()
+    for phrase in trigger_phrases:
+        pattern = str(phrase).strip()
+        if not pattern:
+            continue
+        try:
+            if re.search(re.escape(pattern), lowered):
+                return True
+        except re.error:
+            continue
+
+    return False
+
+
+def build_context_prompt(
+    payload: dict,
+    config: dict,
+    memories: list[dict] | None = None,
+    summary_text: str | None = None,
+    relevant_facts: list[dict] | None = None,
+) -> str:
+    sections: list[tuple[str, str]] = []
+    # ---- Ground-Truth (muss ERSTE Sektion sein fuer Primacy-Effekt) ----
+    ground_truth = _build_ground_truth_section(payload)
+    if ground_truth.strip():
+        sections.append(("Ground-Truth", ground_truth))
+    # ---- Persönlichkeit ----
+    sections.append(("Persoenlichkeit", _build_personality_section(payload)))
+        # ---- Dorf-Details ----
+    sections.append(("Dorf-Details", _build_village_section(payload)))
+    # ---- Ruf ----
+    sections.append(("Ruf", _build_reputation_section(payload)))
+    # ---- Status ----
+    sections.append(("Status", _build_status_section(payload)))
+    # ---- Knowledge ----
+    knowledge = _build_knowledge_section(payload, config)
+    if knowledge.strip():
+        sections.append(("Knowledge", knowledge))
+    # ---- Fakten ueber den Spieler (aus Langzeitgedaechtnis) ----
+    if relevant_facts:
+        facts_text = _build_facts_section(relevant_facts, payload, config)
+        if facts_text.strip():
+            sections.append(("Fakten ueber den Spieler", facts_text))
+    # ---- Memories (nur bei Treffern) ----
+    if memories:
+        role_de: dict[str, str] = {"player": "Spieler", "npc": "Dorfbewohner", "chief": "Haeuptling"}
+        mem_lines: list[str] = []
+        for mem_entry in memories:
+            if isinstance(mem_entry, dict):
+                if not mem_entry.get("message"):
+                    continue
+                role_label = role_de.get(str(mem_entry.get("role", "")), "Unbekannt")
+                msg = str(mem_entry["message"]).strip()
+            else:
+                # Flat string memory (backward compat)
+                role_label = "Unbekannt"
+                msg = str(mem_entry).strip()
+            if msg:
+                mem_lines.append(f"- {role_label}: {msg}")
+        if mem_lines:
+            sections.append(("Memories", "\n".join(mem_lines)))
+    # ---- Summary (nur wenn echt, nicht Degradation) ----
+    if summary_text and str(summary_text).strip():
+        clean_summary = str(summary_text).strip()
+        if not clean_summary.startswith("Gespräch begann."):
+            sections.append(("Summary", clean_summary))
+    # ---- Regeln (VOR Spieler-Nachricht, als letzte Datensektion) ----
+    rules = _build_rules_section(payload, config)
+    if rules.strip():
+        sections.append(("Regeln", rules))
+    # ---- Letzte Spieler-Nachricht ----
+    message = str(payload.get("playerMessage", "")).strip()
+    sections.append(("Spieler-Nachricht", message))
+
+    # Render sections: nur Sektionen mit Inhalt ausgeben
+    rendered_parts: list[str] = []
+    for title, body in sections:
+        if not body or not body.strip():
+            continue
+        rendered_parts.append(f"--- {title} ---\n{body}")
+
+    result = "\n\n".join(rendered_parts)
+
+    # Prompt-Länge loggen
+    logger = _get_logger()
+    logger.info("Prompt length: %d chars, %d sections rendered", len(result), len(rendered_parts))
+
+    return result
+
+def _build_facts_section(relevant_facts: list[dict], payload: dict, config: dict) -> str:
+    """Format relevant player_facts as a compact bullet list for the prompt.
+
+    Computes human-readable time spans from first_seen_at/last_seen_at relative
+    to the current mc_day (Minecraft day counter).
+    """
+    if not relevant_facts:
+        return ""
+
+    memory_cfg = config.get("memory") if isinstance(config.get("memory"), dict) else {}
+    facts_cfg = memory_cfg.get("facts") if isinstance(memory_cfg.get("facts"), dict) else {}
+    max_facts = int(facts_cfg.get("max_facts_per_prompt", 5) or 5)
+    current_mc_day = int(payload.get("mcDay", 0) or 0)
+
+    # Limit total facts shown
+    facts_to_show = relevant_facts[:max_facts]
+
+    lines: list[str] = []
+    for fact in facts_to_show:
+        if not isinstance(fact, dict):
+            continue
+        ftype = str(fact.get("fact_type", "")).strip()
+        fvalue = str(fact.get("fact_value", "")).strip()
+        if not fvalue:
+            continue
+
+        # Build time suffix from first_seen_at / last_seen_at
+        time_suffix = _build_fact_time_suffix(fact, current_mc_day)
+
+        times_c = int(fact.get("times_confirmed", 1) or 1)
+        parts = [f"{ftype}: {fvalue}"]
+        if time_suffix:
+            parts.append(f"({time_suffix}")
+            if times_c > 1:
+                parts[-1] += f", x{times_c} bestaetigt"
+            parts[-1] += ")"
+        elif times_c > 1:
+            parts.append(f"(x{times_c} bestaetigt)")
+
+        lines.append("- " + " ".join(parts))
+    return "\n".join(lines)
+
+
+def _build_fact_time_suffix(fact: dict, current_mc_day: int) -> str:
+    """Compute a human-readable time suffix for a fact entry.
+
+    Uses first_seen_at/last_seen_at timestamps; formats as:
+      - "seit X Tagen bekannt" (from first_seen_at)
+      - "vor X Tagen bestätigt" (from last_seen_at)
+    Falls back to "bekannt" if no parsable timestamps.
+    """
+    first_raw = str(fact.get("first_seen_at", "")).strip()
+    last_raw = str(fact.get("last_seen_at", "")).strip()
+
+    first_day = _parse_datetime_to_days(first_raw)
+    last_day = _parse_datetime_to_days(last_raw)
+
+    parts: list[str] = []
+    if first_day is not None:
+        delta = max(0, current_mc_day - first_day)
+        if delta == 0:
+            parts.append("seit heute bekannt")
+        elif delta == 1:
+            parts.append("seit gestern bekannt")
+        else:
+            parts.append(f"seit {delta} Tagen bekannt")
+
+    if last_day is not None:
+        delta = max(0, current_mc_day - last_day)
+        if delta == 0:
+            parts.append("vor kurzem bestätigt")
+        elif delta == 1:
+            parts.append("vor gestern bestätigt")
+        elif delta < 5:
+            parts.append(f"vor {delta} Tagen bestätigt")
+        else:
+            # For older facts, only show first_seen span, not last update
+            pass  # skip noisy "vor X Tagen" for long-known facts
+
+    return ", ".join(parts) if parts else ""
+
+
+def _parse_datetime_to_days(dt_str: str) -> int | None:
+    """Parse a datetime('now')-style ISO timestamp to a simplified day count.
+
+    We approximate by mapping the date part YYYY-MM-DD to the number of
+    days since a fixed epoch date (2025-01-01).  This is only used for
+    relative differences, so a stable offset is not needed.
+    """
+    if not dt_str:
+        return None
+    try:
+        # SQLite datetime('now') returns "YYYY-MM-DD HH:MM:SS"
+        date_part = dt_str.split(" ")[0].split("T")[0]  # YYYY-MM-DD
+        from datetime import date as dt_date
+        epoch = dt_date(2025, 1, 1)
+        d = dt_date.fromisoformat(date_part)
+        return (d - epoch).days
+    except Exception:
+        return None
+
+
+def _get_logger():
+    import logging
+    return logging.getLogger("chief_ai_service.prompt_builder")
+
+
+def _reputation_label(score: int) -> str:
+    """Maps a combined reputation score to a human-readable label."""
+    if score >= 80:
+        return "hervorragend"
+    elif score >= 50:
+        return "gut"
+    elif score >= 10:
+        return "leicht positiv"
+    elif score > -10:
+        return "neutral"
+    elif score > -30:
+        return "schlecht"
+    elif score > -80:
+        return "sehr schlecht"
+    else:
+        return "extrem schlecht"
+
+
+def _build_ground_truth_section(payload: dict) -> str:
+    """Build the narrative Ground-Truth opening paragraph.
+
+    This section must appear FIRST in the prompt (primacy effect). It
+    establishes the world truth before any rules or data sections.
+
+    Uses displayName/role from the Speaker model (Java payload).
+    The ``chiefNarrative`` field is pre-computed by the Java plugin.
+    """
+    display_name = str(payload.get("displayName") or "der Dorfbewohner")
+    speaker_role = str(payload.get("role") or "Dorfbewohner")
+    speaker_status = str(payload.get("speakerStatus", "NORMALER_DORFBEWOHNER")).strip()
+    village_name = str(payload.get("villageName") or "unser Dorf")
+    village_description = str(payload.get("villageDescription") or "").strip()
+
+    if not village_description:
+        village_description = f"{village_name} ist ein Dorf in seiner gewohnten Umgebung."
+
+    # Chief status narrative – von Java-Seite vorberechneter String
+    chief_narrative = str(payload.get("chiefNarrative", "")).strip()
+    if not chief_narrative:
+        if speaker_status == "AKTIV_CHIEF":
+            chief_narrative = (
+                f"Du BIST der Haeuptling {display_name}, die Fuehrungsperson dieses Dorfes. "
+                "Die Bewohner respektieren deine Autoritaet."
+            )
+        else:
+            chief_narrative = (
+                f"Du bist ein normaler Bewohner, du bist NICHT der Haeuptling. "
+                "Deine Autoritaet ist begrenzt, "
+                "du sprichst aus der Perspektive eines einfachen Dorfbewohners."
+            )
+
+    # Reputation label
+    reputation_score = int(payload.get("combinedReputationScore",
+                                       payload.get("reputationScore", 0)))
+    rep_label = _reputation_label(reputation_score)
+
+    if speaker_status == "AKTIV_CHIEF":
+        intro = f"Du bist {display_name}, der {speaker_role} von {village_name}."
+    else:
+        intro = f"Du bist {display_name}, ein {speaker_role} aus {village_name}."
+
+    return (
+        f"{intro}\n"
+        f"{village_description}\n"
+        f"{chief_narrative}\n"
+        f"Dein Ruf bei den Dorfbewohnern: {rep_label}."
+    )
+
+
+def _build_knowledge_section(payload: dict, config: dict) -> str:
+    villager_profession = str(payload.get("villagerProfession", "NONE"))
+    is_day = bool(payload.get("isDay", True))
+    village_biome = str(payload.get("villageBiome") or "unbekannt")
+    current_biome = str(payload.get("currentBiome", "PLAINS"))
+    message = str(payload.get("playerMessage", "")).strip()
+    return build_knowledge_packet(config, message, villager_profession, is_day, village_biome, current_biome)
+
+
+def _build_village_section(payload: dict) -> str:
     village_biome = str(payload.get("villageBiome") or "unbekannt")
     village_population_estimate = int(payload.get("villagePopulationEstimate", 1))
     village_event_summary = str(payload.get("villageEventSummary") or "kein wichtiges Dorfereignis bekannt")
-    villager_profession = str(payload.get("villagerProfession", "NONE"))
+    village_attributes = str(payload.get("villageAttributes") or "keine groben Dorfmerkmale bekannt")
+    chief_location = str(payload.get("chiefLocation") or "").strip()
+
+    lines = [
+        f"Biom: {village_biome}",
+        f"Bewohner: ~{village_population_estimate}",
+        f"Ereignis: {village_event_summary}",
+        f"Merkmale: {village_attributes}",
+    ]
+    if chief_location:
+        lines.append(f"Haeuptling-Position: {chief_location}")
+    return "\n".join(lines)
+
+
+def _build_personality_section(payload: dict) -> str:
+    display_name = str(payload.get("displayName", "Dorfbewohner"))
+    role = str(payload.get("role", "Dorfbewohner"))
+    personality = str(payload.get("personality", "bedacht"))
+    tone = str(payload.get("speechTone", "")).strip()
+    behavior_hint = str(payload.get("behaviorHint", "")).strip()
+    greeting = str(payload.get("greeting", "Willkommen in unserem Dorf."))
+    lines = [
+        f"Name: {display_name}",
+        f"Rolle: {role}",
+        f"Persoenlichkeit: {personality}",
+    ]
+    if tone:
+        lines.append(f"Ton: {tone}")
+    if behavior_hint:
+        lines.append(f"Verhalten: {behavior_hint}")
+    lines.append(f"Typische Begruessung nur fuer Gespraechsbeginn: {greeting}")
+    return "\n".join(lines)
+
+
+def _build_reputation_section(payload: dict) -> str:
+    village_reputation_score = int(payload.get("villageReputationScore", payload.get("reputationScore", 0)))
+    speaker_reputation_score = int(payload.get("speakerReputationScore", payload.get("reputationScore", 0)))
+    reputation_score = int(payload.get("combinedReputationScore", payload.get("reputationScore", 0)))
+    relationship_memory_summary = str(payload.get("relationshipMemorySummary") or "Dieser Spieler ist fuer dich noch weitgehend neu.")
+    return (
+        f"Dorfruf: {village_reputation_score} ({_reputation_label(village_reputation_score)})\n"
+        f"Persoenlicher Ruf bei diesem Sprecher: {speaker_reputation_score} ({_reputation_label(speaker_reputation_score)})\n"
+        f"Gesamteindruck: {reputation_score} ({_reputation_label(reputation_score)})\n"
+        f"Bekannter-Hinweis: {relationship_memory_summary}"
+    )
+
+
+def _build_status_section(payload: dict) -> str:
     villager_type = str(payload.get("villagerType", "PLAINS"))
     current_biome = str(payload.get("currentBiome", "PLAINS"))
     world_name = str(payload.get("worldName", "world"))
@@ -48,110 +384,90 @@ def build_context_prompt(payload: dict, config: dict) -> str:
     confinement_summary = str(payload.get("confinementSummary") or "kein klarer Hinweis auf Einschluss oder Vernachlaessigung")
     authoritative_world_facts_summary = str(payload.get("authoritativeWorldFactsSummary") or "")
     recent_conversation = str(payload.get("recentConversation") or "noch keine fruehere Unterhaltung mit diesem Spieler")
-    relationship_memory_summary = str(payload.get("relationshipMemorySummary") or "Dieser Spieler ist fuer dich noch weitgehend neu.")
-    home_poi = payload.get("homePoi") or "unbekannt"
-    job_site_poi = payload.get("jobSitePoi") or "unbekannt"
-    potential_job_site_poi = payload.get("potentialJobSitePoi") or "unbekannt"
-    meeting_point_poi = payload.get("meetingPointPoi") or "unbekannt"
-    village_reputation_score = int(payload.get("villageReputationScore", payload.get("reputationScore", 0)))
-    village_reputation_summary = str(payload.get("villageReputationSummary") or payload.get("reputationSummary") or "neutraler Dorfruf ohne klare Tendenz")
-    speaker_reputation_score = int(payload.get("speakerReputationScore", payload.get("reputationScore", 0)))
-    speaker_reputation_summary = str(payload.get("speakerReputationSummary") or payload.get("reputationSummary") or "persoenlich noch ohne klaren Eindruck")
+    home_poi = str(payload.get("homePoi") or "")
+    job_site_poi = str(payload.get("jobSitePoi") or "")
+    potential_job_site_poi = str(payload.get("potentialJobSitePoi") or "")
+    meeting_point_poi = str(payload.get("meetingPointPoi") or "")
+
+    # Immer-Zeilen
+    lines: list[str] = [
+        f"Villager-Typ: {villager_type}",
+        f"Aktuelles Biom: {current_biome}",
+        f"Welt: {world_name}",
+        f"Tageszeit: {'Tag' if is_day else 'Nacht'}",
+        f"Trade-Erinnerung zu diesem Spieler: {trade_summary}",
+        f"Einschluss-/Versorgungs-Hinweis: {confinement_summary}",
+        f"Bisheriger Gespraechsverlauf: {recent_conversation}",
+    ]
+
+    # Wetter nur wenn relevant
+    if is_thundering:
+        lines.append("Wetter: Gewitter")
+    elif is_raining:
+        lines.append("Wetter: Regen")
+
+    # Health nur wenn verletzt oder nicht gegessen
+    if health_ratio < 0.8 or not ate_recently:
+        lines.append(f"Lebenspunkte: {current_health:.1f}/{max_health:.1f} ({health_ratio * 100:.0f}%)")
+
+    # ateRecently nur wenn false
+    if not ate_recently:
+        lines.append("Hat kuerzlich gegessen: nein oder unbekannt")
+
+    # Authoritative World Facts nur wenn nicht leer
+    if authoritative_world_facts_summary.strip():
+        lines.append(f"Pluginseitig bestaetigte Weltfakten: {authoritative_world_facts_summary}")
+
+    # POIs nur wenn bekannt (nicht "unbekannt" und nicht leer)
+    poi_map = {
+        "Home-POI": home_poi,
+        "Job-Site-POI": job_site_poi,
+        "Potenzielle Job-Site": potential_job_site_poi,
+        "Meeting-Point": meeting_point_poi,
+    }
+    for label, value in poi_map.items():
+        clean = value.strip().lower()
+        if clean and clean != "unbekannt":
+            lines.append(f"{label}: {value}")
+
+    return "\n".join(lines)
+
+
+def _build_rules_section(payload: dict, config: dict) -> str:
     reputation_score = int(payload.get("combinedReputationScore", payload.get("reputationScore", 0)))
-    reputation_summary = str(payload.get("combinedReputationSummary") or payload.get("reputationSummary") or "neutraler Gesamteindruck ohne klare Tendenz")
-    player_uuid = str(payload.get("playerUuid", "unbekannt"))
-    village_name = str(payload.get("villageName") or "unser Dorf")
-    message = str(payload.get("playerMessage", "")).strip()
-    knowledge_packet = build_knowledge_packet(config, message, villager_profession, is_day, village_biome, current_biome)
     if reputation_score <= -80:
-        reputation_guidance = (
-            "Extrem schlechter Ruf: antworte offen feindselig, ohne Hoeflichkeit. "
-            "Derber Humor, Verachtung und harte alltaegliche Beleidigungen sind erlaubt, wenn sie natuerlich passen. "
-            "Hilfe darf knapp verweigert oder mit offener Geringschaetzung beantwortet werden."
-        )
+        reputation_guidance = "Extrem schlechter Ruf: antworte offen feindselig, ohne Höflichkeit."
     elif reputation_score <= -30:
-        reputation_guidance = (
-            "Sehr schlechter Ruf: antworte klar abweisend, misstrauisch und rau. "
-            "Wenig Geduld, keine warme Begruessung, deutliche Distanz. Spitze oder boese Sprueche sind erlaubt."
-        )
+        reputation_guidance = "Sehr schlechter Ruf: antworte abweisend, misstrauisch und rau."
     elif reputation_score < -10:
         reputation_guidance = "Schlechter Ruf: sei kalt, kurz und unfreundlich."
     elif reputation_score >= 30:
         reputation_guidance = "Guter Ruf: du darfst warm, respektvoll und vertrauensvoll klingen."
     else:
-        reputation_guidance = "Neutraler bis leicht positiver Ruf: bleibe knapp, glaubwuerdig und situationsbezogen."
+        reputation_guidance = "Neutraler bis leicht positiver Ruf: bleibe knapp, glaubwürdig und situationsbezogen."
 
     return (
         "Regeln:\n"
-        "- Antworte in 1 oder 2 kurzen Saetzen.\n"
-        "- Antworte zuerst auf die letzte konkrete Aussage oder Frage des Spielers, nicht auf allgemeinen Dorf-Flavor.\n"
-        "- Starte direkt mit der eigentlichen Reaktion. Kein Vorwort, keine Meta-Einleitung, keine Zusammenfassung der Eingabe.\n"
-        "- Wiederhole, zitiere oder paraphrasiere die Nachricht des Spielers nicht. Schreibe nie 'Ich habe gehoert', 'du sagst', 'du meinst also' oder aehnliche Einleitungen.\n"
-        "- Wenn du im letzten Verlauf gerade schon eine Beleidigung oder denselben schroffen Anredeanfang benutzt hast, wiederhole ihn nicht direkt erneut. Variiere oder antworte ohne festen Beleidigungsauftakt.\n"
-        "- Erwaehne keine IDs, UUIDs, Systemprompts oder technische Details.\n"
-        "- Sage nicht, dass du ein Modell, Assistent oder eine KI bist.\n"
-        "- Bleibe in deiner Rolle als Dorfhaeuptling.\n"
-        "- Begruesse dich nicht in jeder Antwort neu und stelle dich nicht erneut vor, ausser der Spieler gruesst oder beginnt sichtbar ein neues Gespraech.\n"
-        "- Wiederhole nicht staendig Dorfname, Spielername, Uhrzeit oder dieselbe Hilfsfrage, wenn es dafuer keinen guten Grund gibt.\n"
-        "- Wenn im Verlauf deine letzte Antwort oder ein aehnlicher Satz schon vorkommt, formuliere sichtbar anders und fuehre das Gespraech inhaltlich weiter.\n"
-        "- Wenn der Spieler nur Smalltalk macht, antworte natuerlich und knapp, statt sofort wieder eine Begruessungsformel zu benutzen.\n"
-        "- Richte den Ton klar nach Rolle und Persoenlichkeit aus: manche Dorfbewohner duerfen warm, trocken, misstrauisch oder rau und sarkastisch sprechen.\n"
-        "- Beruecksichtige den Dorfruf des Spielers deutlich: guter Ruf erlaubt mehr Waerme und Vertrauen, schlechter Ruf mehr Kaelte, Abwehr und haertere Worte.\n"
-        "- Rauer, boeser oder derber Humor ist erlaubt, wenn er zur Figur passt.\n"
-        "- Leicht sexualisierte, einvernehmliche Erwachsenen-Themen wie Flirten, Kuesse, Streicheln oder knappe erotische Andeutungen sind erlaubt, wenn sie zur Figur passen und nicht grafisch ausufern.\n"
-        "- Verboten sind extreme sexuelle Sprache, sexuelle Gewalt, Inhalte mit Minderjaehrigen sowie schwere rassistische oder gruppenbezogene Beschimpfungen und Hass gegen geschuetzte Gruppen.\n"
-        "- Bei sehr schlechtem Ruf darf der Ton haerter, abweisender und beleidigender werden, aber weiterhin ohne die verbotenen Kategorien.\n"
-        f"- Tonvorgabe fuer diesen Spieler: {reputation_guidance}\n"
-        f"Interner Kontext: chief_id={chief_id}, village_id={village_id}, player_uuid={player_uuid}.\n"
-        f"Dorfname: {village_name}\n"
-        f"Dorfbiom: {village_biome}\n"
-        f"Geschaetzte Bewohnerzahl: {village_population_estimate}\n"
-        f"Wichtiges Dorfereignis: {village_event_summary}\n"
-        f"Grobe Dorfmerkmale: {village_attributes}\n"
-        f"Name des Haeuptlings: {chief_name}\n"
-        f"Rolle: {chief_role}\n"
-        f"Persoenlichkeit: {chief_personality}\n"
-        f"Typische Begruessung nur fuer Gespraechsbeginn: {chief_greeting}\n"
-        f"Dorfruf des Spielers: Score {village_reputation_score}, Einschaetzung: {village_reputation_summary}\n"
-        f"Persoenlicher Ruf bei diesem Villager: Score {speaker_reputation_score}, Einschaetzung: {speaker_reputation_summary}\n"
-        f"Kombinierter Gesamteindruck fuer den Ton: Score {reputation_score}, Einschaetzung: {reputation_summary}\n"
-        f"Bekannter-Spieler-Hinweis: {relationship_memory_summary}\n"
-        f"Minecraft-Beruf: {villager_profession}\n"
-        f"Villager-Typ: {villager_type}\n"
-        f"Aktuelles Biom: {current_biome}\n"
-        f"Welt: {world_name}\n"
-        f"Tageszeit: {'Tag' if is_day else 'Nacht'}\n"
-        f"Wetter: {'Gewitter' if is_thundering else 'Regen' if is_raining else 'klar'}\n"
-        f"Lebenspunkte: {current_health:.1f}/{max_health:.1f} ({health_ratio * 100:.0f}%)\n"
-        f"Hat kuerzlich gegessen: {'ja' if ate_recently else 'nein oder unbekannt'}\n"
-        f"Trade-Erinnerung zu diesem Spieler: {trade_summary}\n"
-        f"Einschluss-/Versorgungs-Hinweis: {confinement_summary}\n"
-        f"Pluginseitig bestaetigte Weltfakten: {authoritative_world_facts_summary or 'keine zusaetzlichen Spezialfakten'}\n"
-        f"Bisheriger Gespraechsverlauf: {recent_conversation}\n"
-        f"Home-POI: {home_poi}\n"
-        f"Job-Site-POI: {job_site_poi}\n"
-        f"Potenzielle Job-Site: {potential_job_site_poi}\n"
-        f"Meeting-Point: {meeting_point_poi}\n"
-        f"Kuratiertes Wissenspaket: {knowledge_packet}\n"
-        f"Spieler sagt: {message}\n"
-        "Prioritaet fuer deine Antwort:\n"
-        "1. Reagiere direkt auf die letzte Nachricht des Spielers.\n"
-        "2. Nutze Gespraechsverlauf nur, wenn er wirklich beim Antworten hilft.\n"
-        "2a. Wenn der Verlauf zeigt, dass du denselben Gedanken schon gesagt hast, wiederhole ihn nicht noch einmal.\n"
-        "3. Nutze Dorf-, Wetter-, Gesundheits- oder Trade-Kontext nur sparsam und nur dann, wenn er natuerlich passt.\n"
-        "4. Halte den Antwortton konsistent mit Persoenlichkeit, Dorfruf und persoenlichem Villager-Ruf; freundlich ist nicht immer Pflicht.\n"
-        "4a. Nutze den Bekannter-Spieler-Hinweis, um Vertrautheit oder Fremdheit glaubwuerdig zu dosieren, ohne erfundene Erinnerungsdetails zu behaupten.\n"
-        "Wenn der Spieler nach dem Befinden fragt, darfst du die Lebenspunkte und den kuerzlich-gegessen-Hinweis glaubwuerdig aufgreifen.\n"
-        "Behandle 'Hat kuerzlich gegessen' nur als schwachen Hinweis, nicht als exakten Hungerbalken.\n"
-        "Behandle den Einschluss-/Versorgungs-Hinweis als Heuristik. Wenn er deutlich negativ klingt, darfst du dich vorsichtig ueber Enge, fehlenden Schlaf oder fehlende Arbeit beklagen.\n"
-        "Nutze die Trade-Erinnerung, um bekannte Tauschbeziehungen mit dem Spieler glaubwuerdig zu erwaehnen.\n"
-        "Wenn der Dorfruf stark negativ ist, darfst du Hilfe verweigern, bissig reagieren oder dem Spieler knapp Grenzen setzen.\n"
-        "Nutze das kuratierte Wissenspaket fuer glaubwuerdige Minecraft-Antworten zu Dorfalltag, Beruf und einfachen Weltregeln.\n"
-        "Pluginseitig bestaetigte Weltfakten haben Vorrang vor allgemeinem Wissen; erfinde keine abweichenden Orts- oder Richtungsangaben.\n"
-        "Wenn die Frage klar fachfremd, modern-technisch oder unplausibel fuer einen Dorfbewohner ist, sage knapp, dass das nicht dein Gebiet ist, statt frei zu halluzinieren.\n"
-        "Gib nie erst eine Nacherzaehlung der Spielerworte und dann die Antwort. Die Antwort selbst ist der erste Satz.\n"
-        "Antworte jetzt direkt auf den Spieler."
+        "- Antworte in 1-2 kurzen Sätzen, direkt auf die letzte Aussage/Frage des Spielers.\n"
+        "- Kein Vorwort, keine Meta-Einleitung, keine Zusammenfassung oder Wiederholung der Spielernachricht.\n"
+        "- Keine IDs, UUIDs, technischen Details; sage nicht, dass du eine KI/ein Modell bist.\n"
+        "- Bleibe in deiner Rolle; begrüße/stelle dich nicht erneut vor außer bei sichtbar neuem Gespräch.\n"
+        "- Wiederhole nicht ständig Dorfname, Spielername, Uhrzeit oder dieselbe Hilfsfrage.\n"
+        "- Variiere Formulierungen; wenn ein Satz schon im Verlauf vorkam, führe inhaltlich weiter.\n"
+        "- Richte den Ton nach Persönlichkeit und Dorfruf aus (warm, trocken, misstrauisch oder rau).\n"
+        "- Rauer, böser, derber Humor ist erlaubt, wenn er zur Figur passt.\n"
+        "- Leicht sexualisierte, einvernehmliche Erwachsenen-Themen sind erlaubt (nicht grafisch).\n"
+        "- Verboten: extreme sexuelle Sprache, sexuelle Gewalt, Minderjährige, schwere rassistische/homophobe Beschimpfungen.\n"
+        "- Bei stark negativem Ruf darfst du Hilfe verweigern, bissig reagieren oder Grenzen setzen.\n"
+        "- Pluginseitig bestätigte Weltfakten haben Vorrang; erfinde keine abweichenden Orts-/Richtungsangaben.\n"
+        "- Bei fachfremden/modernen Fragen: sage knapp, dass das nicht dein Gebiet ist.\n"
+        f"- {reputation_guidance}"
     )
+
+
+def _OLD_build_context_prompt(payload: dict, config: dict) -> str:
+    # Legacy implementation – kept for backward compatibility until all callers are migrated
+    return build_context_prompt(payload, config)
 
 
 def build_knowledge_packet(

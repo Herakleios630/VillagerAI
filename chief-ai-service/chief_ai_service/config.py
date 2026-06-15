@@ -15,6 +15,7 @@ DEFAULT_CONFIG = {
     "ollama": {
         "endpoint": "http://127.0.0.1:11434/api/generate",
         "model": "qwen2.5:3b",
+        "embedding_model": "nomic-embed-text",
         "timeout_seconds": 60,
         "temperature": 0.65,
         "top_p": 0.9,
@@ -28,10 +29,84 @@ DEFAULT_CONFIG = {
         "timeout_seconds": 60,
         "temperature": 0.55,
         "top_p": 0.9,
-        "max_tokens": 120,
+        "max_tokens": 200,
         "api_key_env": "DEEPSEEK_API_KEY",
         "api_key": "",
         "system_prompt": "Du bist ein glaubwuerdiger Sprecher in einem Minecraft-Dorf. Antworte passend zur Rolle, kurz und natuerlich auf Deutsch.",
+    },
+    "facts": {
+        "enabled": True,
+        "extraction_model": "qwen2.5:3b",
+        "intent_model": "qwen2.5:3b",
+        "relevance_model": "qwen2.5:3b",
+        "max_facts_per_prompt": 5,
+        "dedup_similarity_threshold": 0.85,
+        "dedup_ask_model_threshold_min": 0.7,
+        "retrieval_top_n_candidates": 10,
+        "relevance_cache_minutes": 5,
+        "worker_max_retries": 3
+    },
+    "memory": {
+        "worker_max_retries": 3,
+        "summary_interval_turns": 20,
+        "facts_search": True,
+        "trigger_phrases": [
+            "erinnerst du dich",
+            "weisst du noch",
+            "weißt du noch",
+            "erinnerst",
+            "erinnere mich",
+            "letztes mal",
+            "gestern",
+            "vorhin",
+            "damals",
+            "frueher",
+            "früher",
+            "hast du vergessen",
+            "vergessen",
+            "was habe ich gesagt",
+            "was hab ich gesagt",
+            "was hatte ich gesagt",
+            "vor einer weile",
+            "vor einiger zeit",
+            "neulich",
+            "kennst du mich noch",
+            "erkennst du mich",
+            "weisst du wer ich bin",
+            "weißt du wer ich bin",
+            "schonmal",
+            "schon mal",
+            "jemals",
+            "das letzte mal",
+            "beim letzten mal",
+            "unser letztes gespraech",
+            "unser letztes gespräch",
+            "unser gespraech",
+            "unser gespräch",
+            "vorhin schon",
+            "vor kurzem",
+            "kuerzlich",
+            "kürzlich",
+            "irgendwann",
+            "vor tagen",
+            "tage zuvor",
+            "zuvor",
+            "vorige woche",
+            "letzte woche",
+            "erinnerung",
+            "zurueckerinnern",
+            "zurückerinnern",
+            "besinnst",
+            "besinnßt",
+            "entsinnst",
+            "jemals erzaehlt",
+            "jemals erzählt",
+            "schon erzaehlt",
+            "schon erzählt",
+            "mal gesagt",
+            "mal erwaehnt",
+            "mal erwähnt"
+        ]
     },
 }
 
@@ -197,6 +272,8 @@ def load_config() -> dict:
     merged.update(loaded)
     merged["ollama"] = dict(DEFAULT_CONFIG["ollama"]) | dict(loaded.get("ollama", {}))
     merged["deepseek"] = dict(DEFAULT_CONFIG["deepseek"]) | dict(loaded.get("deepseek", {}))
+    merged["facts"] = dict(DEFAULT_CONFIG["facts"]) | dict(loaded.get("facts", {}))
+    merged["memory"] = dict(DEFAULT_CONFIG["memory"]) | dict(loaded.get("memory", {}))
     merged["knowledge_packets"] = knowledge_packets
     api_key_env = str(merged["deepseek"].get("api_key_env", "DEEPSEEK_API_KEY")).strip()
     api_key = str(merged["deepseek"].get("api_key", "")).strip()

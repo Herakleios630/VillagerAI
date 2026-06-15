@@ -1,0 +1,7 @@
+Hier sind Fakten über einen Minecraft-Spieler:
+{facts_list}
+
+Die aktuelle Spieler-Frage lautet: "{question}"
+
+Welche dieser Fakten sind relevant für die Beantwortung der Frage?
+Gib NUR ein JSON-Array mit den IDs der relevanten Fakten zurück: [0, 3]

@@ -81,7 +81,28 @@ offer-templates:
       radius: 12
       difficulty-tier: 4
       intro: "Legendarer Auftrag: Kartiere die fernsten Grenzgebiete und kehre lebend zurueck."
+  CHIEF:
+    - type: SECURE
+      mode: village-light
+      material: TORCH
+      amount: 0
+      intro: "Die Sicherheit dieses Dorfes liegt mir am Herzen. Vertreib die dunklen Flecken."
+    - type: FETCH
+      material: BREAD
+      amount: 8
+      intro: "Ein wenig Proviant waere hilfreich."
   CLERIC:
+    - type: SECURE
+      mode: village-light
+      material: TORCH
+      amount: 0
+      intro: "Die Dunkelheit bringt Monster. Hilf mir, eine dunkle Ecke des Dorfes zu erhellen!"
+    - type: SECURE
+      mode: village-light
+      material: LANTERN
+      amount: 0
+      difficulty-tier: 2
+      intro: "Selbst die staerkste Tageshelle reicht nicht – das Dorf braucht bestaendiges Licht!"
     - type: BREW
       potion-type: HEALING
       amount: 2
@@ -109,6 +130,11 @@ offer-templates:
       difficulty-tier: 4
       intro: "Legendarer Auftrag: Besiege den Enderdrachen, damit das Dorf endlich aufatmen kann."
   ARMORER:
+    - type: SECURE
+      mode: village-light
+      material: TORCH
+      amount: 0
+      intro: "Ich kann Ruestung schmieden, aber ich kann nicht jeden Zombie allein aufhalten. Wir brauchen Licht!"
     - type: FETCH
       material: IRON_INGOT
       amount: 10
@@ -122,6 +148,11 @@ offer-templates:
       amount: 16
       intro: "Ohne Kohle bleibt der Ofen kalt."
   TOOLSMITH:
+    - type: SECURE
+      mode: village-light
+      material: TORCH
+      amount: 0
+      intro: "Ohne Licht sind unsere Werkzeuge morgens blutig, bevor der Tag beginnt."
     - type: FETCH
       material: IRON_INGOT
       amount: 10
@@ -135,6 +166,11 @@ offer-templates:
       amount: 12
       intro: "Einige Werkzeuge brechen uns weg. Ich brauche Material fuer schnelle Reparaturen."
   WEAPONSMITH:
+    - type: SECURE
+      mode: village-light
+      material: TORCH
+      amount: 0
+      intro: "Das beste Schwert nuetzt nichts, wenn sie im Dunkeln von hinten kommen."
     - type: FETCH
       material: IRON_INGOT
       amount: 10
@@ -154,6 +190,11 @@ offer-templates:
       difficulty-tier: 4
       intro: "Legendarer Auftrag: Besorge eine seltene End-Beute fuer unser Dorf."
   MASON:
+    - type: SECURE
+      mode: village-light
+      material: TORCH
+      amount: 0
+      intro: "Stein schuetzt, aber Licht haelt die Kreaturen fern. Mach diese Ecke hell."
     - type: FETCH
       material: COBBLESTONE
       amount: 24

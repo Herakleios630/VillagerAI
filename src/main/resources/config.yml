@@ -39,6 +39,13 @@ ai:
 quests:
   talk:
     cooldown-seconds: 300
+  secure:
+    village-light:
+      sub-area-size: 20
+      min-dark-blocks: 10
+      perimeter-margin: 48
+      min-perimeter-size: 40
+      dark-list-cache-ttl-seconds: 30
   difficulty:
     enabled: true
     unlock-scores:
@@ -106,8 +113,47 @@ quests:
         - efficiency
         - fortune
         - mending
+  markers:
+    enabled: true
+    active-symbol: "§7?"
+    ready-symbol: "§e?"
+    height-above-head: 1.2
+    world-markers:
+      enabled: true
+      secure-material: "GLOWSTONE"
+      explore-material: "LODESTONE"
+      height-above-ground: 3
+      particle: "SOUL_FIRE_FLAME"
+      label-distance: true
+      show-block: false
   ui:
     boss-bar-enabled: true
+
+debug:
+  dark-block-scan-logging: false
+  village-light-particle-marker: true
+  chat-debug-level: verbose
+
+visuals:
+  chief-banner:
+    back-offset: 0.6
+    height-offset: 0.9
+    scale: 0.8
+    tilt-degrees: 12
+    interpolation-ticks: 3
+    tick-interval: 3
+
+mourning:
+  particles:
+    enabled: true
+    particle: DUST
+    dust-color: "30,30,35"
+    dust-size: 1.8
+    count-per-tick: 500
+    interval-min-ticks: 10
+    interval-max-ticks: 20
+    day-only: false
+  debug-particles: true
 
 villager-insights:
   trades:
@@ -120,3 +166,15 @@ villager-insights:
     cant-reach-walk-target-minutes: 5
     stale-sleep-minutes: 30
     stale-work-minutes: 30
+
+memory:
+  enabled: true
+  trigger_phrases_fallback:
+    - name
+    - erinner
+    - weisst du noch
+    - wei t du noch
+    - frueher
+    - fruher
+    - letztes mal
+    - damals

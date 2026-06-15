@@ -5,7 +5,7 @@ import java.util.UUID;
 public record Quest(
         String questId,
         UUID playerUuid,
-        String chiefId,
+        String speakerId,
         String villageId,
     int difficultyTier,
         QuestType type,
@@ -25,8 +25,8 @@ public record Quest(
         if (playerUuid == null) {
             throw new IllegalArgumentException("playerUuid must not be null");
         }
-        if (chiefId == null || chiefId.isBlank()) {
-            throw new IllegalArgumentException("chiefId must not be blank");
+        if (speakerId == null || speakerId.isBlank()) {
+            throw new IllegalArgumentException("speakerId must not be blank");
         }
         if (villageId == null || villageId.isBlank()) {
             throw new IllegalArgumentException("villageId must not be blank");
@@ -58,7 +58,7 @@ public record Quest(
         return new Quest(
                 questId,
                 playerUuid,
-                chiefId,
+                speakerId,
                 villageId,
                 difficultyTier,
                 type,
@@ -76,7 +76,7 @@ public record Quest(
         return new Quest(
                 questId,
                 playerUuid,
-                chiefId,
+                speakerId,
                 villageId,
                 difficultyTier,
                 type,

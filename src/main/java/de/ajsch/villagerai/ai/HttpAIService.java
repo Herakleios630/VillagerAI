@@ -2,6 +2,7 @@ package de.ajsch.villagerai.ai;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
+import com.google.gson.annotations.SerializedName;
 import de.ajsch.villagerai.model.AIReply;
 import de.ajsch.villagerai.model.AIRequest;
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.text.Normalizer;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.function.Consumer;
 
 public final class HttpAIService implements AIService {
 
@@ -53,10 +55,10 @@ public final class HttpAIService implements AIService {
                 HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() >= 200 && response.statusCode() < 300) {
                     HttpReplyPayload payload = parseReply(response.body());
-                    String replyText = payload.replyText() == null || payload.replyText().isBlank()
-                            ? "Ich habe gerade nichts zu sagen."
-                            : payload.replyText();
-                    return new AIReply(replyText);
+                                        String replyText = payload.replyText() == null || payload.replyText().isBlank()
+                                                ? "Ich habe gerade nichts zu sagen."
+                                                : payload.replyText();
+                                        return new AIReply(replyText, payload.factsDebug());
                 }
                 throw new IllegalStateException("AI service returned HTTP " + response.statusCode() + " with body: " + response.body());
             } catch (IOException | InterruptedException exception) {
@@ -76,7 +78,7 @@ public final class HttpAIService implements AIService {
     private String buildJsonBody(AIRequest request) {
         return GSON.toJson(new HttpRequestPayload(
                 buildSystemPrompt(request),
-                request.chiefId(),
+                request.speakerId(),
                 request.villageId(),
                 request.villageName(),
             request.villageDescription(),
@@ -84,12 +86,12 @@ public final class HttpAIService implements AIService {
             request.villageBiome(),
             request.villagePopulationEstimate(),
             request.villageEventSummary(),
-                request.chiefName(),
-                request.chiefRole(),
-                request.chiefPersonality(),
-            request.chiefTone(),
-            request.chiefBehaviorHint(),
-                request.chiefGreeting(),
+                                request.displayName(),
+                request.role(),
+                request.personality(),
+                request.speechTone(),
+                request.behaviorHint(),
+                request.greeting(),
             request.villagerProfession(),
             request.villagerType(),
             request.currentBiome(),
@@ -118,8 +120,15 @@ public final class HttpAIService implements AIService {
                 request.combinedReputationSummary(),
                 request.reputationScore(),
                 request.reputationSummary(),
-                request.playerUuid().toString(),
-                request.playerMessage()));
+                                request.villageHasChief(),
+                                                                request.villageMourning(),
+                                                request.chiefLocation() == null ? "" : request.chiefLocation(),
+                                                request.speakerStatus() == null ? "NORMALER_DORFBEWOHNER" : request.speakerStatus(),
+                                                request.chiefAttributes(),
+                                                request.playerUuid().toString(),
+                                                                request.playerMessage(),
+                                                                request.memoryEnabled(),
+                                                                request.memoryTriggerFallbackPhrases() == null ? java.util.List.of() : request.memoryTriggerFallbackPhrases()));
     }
 
     private String buildSystemPrompt(AIRequest request) {
@@ -144,40 +153,18 @@ public final class HttpAIService implements AIService {
             prompt.append("Du bist die fuehrende Bezugsperson dieses Dorfes und sprichst mit natuerlicher Autoritaet. ");
         }
 
-        if (request.chiefTone() != null && !request.chiefTone().isBlank()) {
-            prompt.append("Sprachstil: ").append(request.chiefTone()).append(". ");
-        }
-        if (request.chiefBehaviorHint() != null && !request.chiefBehaviorHint().isBlank()) {
-            prompt.append("Verhalten: ").append(request.chiefBehaviorHint()).append(". ");
-        }
-        if (request.villageDescription() != null && !request.villageDescription().isBlank()) {
-            prompt.append("Dorfkontext: ").append(request.villageDescription()).append(". ");
-        }
-        if (request.villageAttributes() != null && !request.villageAttributes().isBlank()) {
-            prompt.append("Dorfmerkmale: ").append(request.villageAttributes()).append(". ");
-        }
-        if (request.villageBiome() != null && !request.villageBiome().isBlank()) {
-            prompt.append("Dorfbiom: ").append(request.villageBiome()).append(". ");
-        }
-        if (request.villagePopulationEstimate() > 0) {
-            prompt.append("Geschaetzte Bewohnerzahl: ").append(request.villagePopulationEstimate()).append(". ");
-        }
-        if (request.villageEventSummary() != null && !request.villageEventSummary().isBlank()) {
-            prompt.append("Wichtiges Dorfereignis: ").append(request.villageEventSummary()).append(". ");
-        }
-        if (request.relationshipMemorySummary() != null && !request.relationshipMemorySummary().isBlank()) {
-            prompt.append("Bekannter-Spieler-Hinweis: ").append(request.relationshipMemorySummary()).append(". ");
-        }
-        if (request.authoritativeWorldFactsSummary() != null && !request.authoritativeWorldFactsSummary().isBlank()) {
-            prompt.append("Pluginseitig bestaetigte Weltfakten: ").append(request.authoritativeWorldFactsSummary()).append(". ");
-        }
-
-        prompt.append("Antworte kurz, glaubwuerdig und natuerlich auf Deutsch.");
+                prompt.append("Antworte kurz, glaubwuerdig und natuerlich auf Deutsch.");
         return prompt.toString().trim();
     }
 
-    private boolean isRegularVillager(AIRequest request) {
-        return request.chiefId() != null && request.chiefId().startsWith("villager-");
+        private boolean isRegularVillager(AIRequest request) {
+        if (request.speakerId() == null) {
+            return false;
+        }
+        if (request.speakerId().startsWith("chief-")) {
+            return false;
+        }
+        return !"AKTIV_CHIEF".equals(request.speakerStatus());
     }
 
     private boolean isCasualConversationRequest(String playerMessage) {
@@ -253,7 +240,7 @@ public final class HttpAIService implements AIService {
 
     private record HttpRequestPayload(
             String systemPrompt,
-            String chiefId,
+            String speakerId,
             String villageId,
             String villageName,
             String villageDescription,
@@ -261,12 +248,12 @@ public final class HttpAIService implements AIService {
             String villageBiome,
             int villagePopulationEstimate,
             String villageEventSummary,
-            String chiefName,
-            String chiefRole,
-            String chiefPersonality,
-            String chiefTone,
-            String chiefBehaviorHint,
-            String chiefGreeting,
+            String displayName,
+            String role,
+            String personality,
+            String speechTone,
+            String behaviorHint,
+            String greeting,
                 String villagerProfession,
                 String villagerType,
                 String currentBiome,
@@ -294,11 +281,18 @@ public final class HttpAIService implements AIService {
                 int combinedReputationScore,
                 String combinedReputationSummary,
                 int reputationScore,
-                String reputationSummary,
-            String playerUuid,
-            String playerMessage) {
-    }
+                            String reputationSummary,
+                            boolean villageHasChief,
+                                                        boolean villageMourning,
+                                                        String chiefLocation,
+                                                        String speakerStatus,
+                                                        @org.jetbrains.annotations.Nullable de.ajsch.villagerai.model.ChiefAttributes chiefAttributes,
+                                                                                                                String playerUuid,
+            String playerMessage,
+                        @SerializedName("memory_enabled") boolean memoryEnabled,
+                        @SerializedName("memory_trigger_fallback_phrases") java.util.List<String> memoryTriggerFallbackPhrases) {
+                }
 
-    private record HttpReplyPayload(String replyText) {
+        private record HttpReplyPayload(String replyText, String factsDebug) {
     }
 }
