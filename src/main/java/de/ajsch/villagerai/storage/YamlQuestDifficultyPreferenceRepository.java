@@ -21,16 +21,16 @@ public final class YamlQuestDifficultyPreferenceRepository implements QuestDiffi
     }
 
     @Override
-    public Optional<QuestDifficultyPreference> findByPlayerAndChief(UUID playerUuid, String chiefId) {
+    public Optional<QuestDifficultyPreference> findByPlayerAndChief(UUID playerUuid, String speakerId) {
         synchronized (lock) {
-            ConfigurationSection section = configuration.getConfigurationSection(path(playerUuid, chiefId));
+            ConfigurationSection section = configuration.getConfigurationSection(path(playerUuid, speakerId));
             if (section == null) {
                 return Optional.empty();
             }
 
             return Optional.of(new QuestDifficultyPreference(
                     playerUuid,
-                    chiefId,
+                    speakerId,
                     Math.max(0, section.getInt("preferred-difficulty-tier", 0)),
                     Math.max(0, section.getInt("last-suggested-tier", 0)),
                     section.getLong("last-suggested-at-epoch-millis", 0L),
@@ -41,7 +41,7 @@ public final class YamlQuestDifficultyPreferenceRepository implements QuestDiffi
     @Override
     public void savePreference(QuestDifficultyPreference preference) {
         synchronized (lock) {
-            String path = path(preference.playerUuid(), preference.chiefId());
+            String path = path(preference.playerUuid(), preference.speakerId());
             configuration.set(path + ".preferred-difficulty-tier", preference.preferredDifficultyTier());
             configuration.set(path + ".last-suggested-tier", preference.lastSuggestedTier());
             configuration.set(path + ".last-suggested-at-epoch-millis", preference.lastSuggestedAtEpochMillis());
@@ -50,8 +50,8 @@ public final class YamlQuestDifficultyPreferenceRepository implements QuestDiffi
         }
     }
 
-    private String path(UUID playerUuid, String chiefId) {
-        return "preferences." + playerUuid + "." + chiefId;
+    private String path(UUID playerUuid, String speakerId) {
+        return "preferences." + playerUuid + "." + speakerId;
     }
 
     private YamlConfiguration loadConfiguration(JavaPlugin plugin) {

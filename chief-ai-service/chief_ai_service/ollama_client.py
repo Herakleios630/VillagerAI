@@ -6,7 +6,13 @@ from .prompt_builder import build_ollama_prompt
 from .reply_sanitizer import sanitize_reply_text
 
 
-def request_ollama_reply(payload: dict, config: dict) -> str:
+def request_ollama_reply(
+    payload: dict,
+    config: dict,
+    memories: list[str] | None = None,
+    summary_text: str | None = None,
+    relevant_facts: list[dict] | None = None,
+) -> str:
     message = str(payload.get("playerMessage", "")).strip()
     if not message:
         return "Sprich klar, damit ich dich verstehen kann."
@@ -14,7 +20,7 @@ def request_ollama_reply(payload: dict, config: dict) -> str:
     ollama_config = config.get("ollama", {})
     request_body = json.dumps({
         "model": ollama_config.get("model", "qwen2.5:3b"),
-        "prompt": build_ollama_prompt(payload, config),
+        "prompt": build_ollama_prompt(payload, config, memories=memories, summary_text=summary_text, relevant_facts=relevant_facts),
         "stream": False,
         "options": {
             "temperature": float(ollama_config.get("temperature", 0.65)),

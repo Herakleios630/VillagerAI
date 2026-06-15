@@ -1,0 +1,7 @@
+# VillagerAI - Village registry
+# This file is managed by the plugin. Do not edit manually while the server is running.
+# Each village is keyed by the posKey of its first registered anchor.
+# known-anchors are stored as "TYPE;world;x;y;z" strings.
+# Anchor types: MEETING_POINT, HOME, JOB_SITE, POTENTIAL_JOB_SITE, VILLAGER_POSITION
+
+villages: {}

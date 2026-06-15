@@ -61,7 +61,7 @@ public final class YamlQuestRepository implements QuestRepository {
             String path = "quests." + quest.questId();
             configuration.set(path + ".quest-id", quest.questId());
             configuration.set(path + ".player-uuid", quest.playerUuid().toString());
-            configuration.set(path + ".chief-id", quest.chiefId());
+            configuration.set(path + ".chief-id", quest.speakerId());
             configuration.set(path + ".village-id", quest.villageId());
             configuration.set(path + ".difficulty-tier", quest.difficultyTier());
             configuration.set(path + ".type", quest.type().name().toLowerCase(Locale.ROOT));
@@ -105,13 +105,13 @@ public final class YamlQuestRepository implements QuestRepository {
         }
 
         String playerUuid = section.getString("player-uuid");
-        String chiefId = section.getString("chief-id");
+        String speakerId = section.getString("chief-id");
         String villageId = section.getString("village-id");
         String typeName = section.getString("type");
         String title = section.getString("title");
         String description = section.getString("description");
         String statusName = section.getString("status");
-        if (playerUuid == null || chiefId == null || villageId == null || typeName == null || title == null || description == null || statusName == null) {
+        if (playerUuid == null || speakerId == null || villageId == null || typeName == null || title == null || description == null || statusName == null) {
             return Optional.empty();
         }
 
@@ -119,7 +119,7 @@ public final class YamlQuestRepository implements QuestRepository {
             return Optional.of(new Quest(
                     section.getString("quest-id", questId),
                     UUID.fromString(playerUuid),
-                    chiefId,
+                    speakerId,
                     villageId,
                     Math.max(0, section.getInt("difficulty-tier", 0)),
                     QuestType.valueOf(typeName.toUpperCase(Locale.ROOT)),

@@ -1,0 +1,3 @@
+# Alle gespraechsfaehigen Dorfbewohner (Chiefs und normale Villager).
+# Enthaelt KEINE Dorf-Identitaetsfelder und KEINE Chief-Attribute.
+speakers: {}

@@ -71,6 +71,47 @@ public final class PluginDataLoader {
         return plugin.getConfig().getDouble("quests.markers.height-above-head", 0.6);
     }
 
+    public boolean questWorldMarkersEnabled() {
+        return plugin.getConfig().getBoolean("quests.markers.world-markers.enabled", true);
+    }
+
+    public Material questWorldMarkerSecureMaterial() {
+        String materialName = plugin.getConfig().getString("quests.markers.world-markers.secure-material", "GLOWSTONE");
+        Material material = Material.matchMaterial(materialName == null ? "GLOWSTONE" : materialName);
+        return material != null ? material : Material.GLOWSTONE;
+    }
+
+    public Material questWorldMarkerExploreMaterial() {
+        String materialName = plugin.getConfig().getString("quests.markers.world-markers.explore-material", "LODESTONE");
+        Material material = Material.matchMaterial(materialName == null ? "LODESTONE" : materialName);
+        return material != null ? material : Material.LODESTONE;
+    }
+
+    public double questWorldMarkerHeightAboveGround() {
+        return plugin.getConfig().getDouble("quests.markers.world-markers.height-above-ground", 3.0);
+    }
+
+    public org.bukkit.Particle questWorldMarkerParticle() {
+        String particleName = plugin.getConfig().getString("quests.markers.world-markers.particle", "SOUL_FIRE_FLAME");
+        if (particleName == null || particleName.isBlank()) {
+            return org.bukkit.Particle.SOUL_FIRE_FLAME;
+        }
+        try {
+            return org.bukkit.Particle.valueOf(particleName.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            plugin.getLogger().warning("Unbekannter Particle-Typ '" + particleName + "' in quests.markers.world-markers.particle. Nutze SOUL_FIRE_FLAME.");
+            return org.bukkit.Particle.SOUL_FIRE_FLAME;
+        }
+    }
+
+    public boolean questWorldMarkerLabelDistance() {
+        return plugin.getConfig().getBoolean("quests.markers.world-markers.label-distance", true);
+    }
+
+    public boolean questWorldMarkerShowBlock() {
+        return plugin.getConfig().getBoolean("quests.markers.world-markers.show-block", true);
+    }
+
     public QuestDifficultyService.Settings loadQuestDifficultySettings() {
         return new QuestDifficultyService.Settings(
                 plugin.getConfig().getBoolean("quests.difficulty.enabled", true),
@@ -94,6 +135,26 @@ public final class PluginDataLoader {
                 plugin.getConfig().getLong("villager-insights.confinement.cant-reach-walk-target-minutes", 5L),
                 plugin.getConfig().getLong("villager-insights.confinement.stale-sleep-minutes", 30L),
                 plugin.getConfig().getLong("villager-insights.confinement.stale-work-minutes", 30L));
+    }
+
+    public int questsSecureSubAreaSize() {
+        return plugin.getConfig().getInt("quests.secure.village-light.sub-area-size", 20);
+    }
+
+    public int questsSecureMinDarkBlocks() {
+        return plugin.getConfig().getInt("quests.secure.village-light.min-dark-blocks", 10);
+    }
+
+    public int questsSecurePerimeterMargin() {
+        return plugin.getConfig().getInt("quests.secure.village-light.perimeter-margin", 16);
+    }
+
+    public int questsSecureMinPerimeterSize() {
+        return plugin.getConfig().getInt("quests.secure.village-light.min-perimeter-size", 40);
+    }
+
+    public long questsSecureDarkListCacheTtlSeconds() {
+        return plugin.getConfig().getLong("quests.secure.village-light.dark-list-cache-ttl-seconds", 30L);
     }
 
     public ConfigurationSection loadChiefProfilesSection() {
@@ -321,6 +382,14 @@ public final class PluginDataLoader {
     private YamlConfiguration loadYamlFile(String fileName) {
         File file = new File(plugin.getDataFolder(), fileName);
         return YamlConfiguration.loadConfiguration(file);
+    }
+
+    public boolean debugDarkBlockScanLogging() {
+        return plugin.getConfig().getBoolean("debug.dark-block-scan-logging", false);
+    }
+
+    public boolean debugVillageLightParticleMarker() {
+        return plugin.getConfig().getBoolean("debug.village-light-particle-marker", true);
     }
 
     public record ConfinementSettings(

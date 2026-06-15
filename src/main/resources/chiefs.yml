@@ -1,11 +1,1 @@
 chiefs: {}
-# Example structure:
-# chiefs:
-#   entity-uuid:
-#     chief-id: chief-1234abcd
-#     village-id: world:12:8
-#     village-name: Eichenhain
-#     display-name: Aldor
-#     role: Dorfhaeuptling
-#     personality: bedachtig und wachsam
-#     greeting: Willkommen in Eichenhain.

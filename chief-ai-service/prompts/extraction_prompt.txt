@@ -1,0 +1,16 @@
+Extrahiere alle persönlichen Fakten über den Spieler aus dieser Minecraft-Dorf-Nachricht.
+
+Fakten-Typen: name, location, preference, event, relationship, profession, possession, custom
+
+Regeln:
+- Extrahiere nur Fakten, die explizit genannt werden.
+- Jeder Fakt muss einen klaren "value" haben (maximal 8 Wörter).
+- "importance" (0.0-1.0) schätzen: Name=1.0, Wohnort=0.9, Beruf=0.8, Vorlieben=0.6, Erlebnisse=0.5.
+- Wenn keine Fakten erkennbar sind, gib ein leeres Array zurück.
+
+Gib NUR ein JSON-Objekt zurück, kein anderer Text:
+{
+  "facts": [{"type": "...", "value": "...", "importance": 0.0-1.0}]
+}
+
+Spieler-Nachricht: "{message}"

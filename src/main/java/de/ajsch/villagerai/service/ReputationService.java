@@ -1,12 +1,20 @@
 package de.ajsch.villagerai.service;
 
+import de.ajsch.villagerai.event.ReputationChangedEvent;
 import de.ajsch.villagerai.model.Quest;
+import de.ajsch.villagerai.model.ReputationScope;
 import de.ajsch.villagerai.model.SpeakerReputation;
 import de.ajsch.villagerai.model.QuestType;
 import de.ajsch.villagerai.model.VillageReputation;
 import de.ajsch.villagerai.storage.ReputationRepository;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
+import org.jetbrains.annotations.Nullable;
 
 public final class ReputationService {
 
@@ -14,12 +22,21 @@ public final class ReputationService {
     private static final int MAX_SCORE = 100;
 
     private final ReputationRepository reputationRepository;
+    private final Set<String> mourningVillageIds = ConcurrentHashMap.newKeySet();
+    private Logger logger;
 
     public ReputationService(ReputationRepository reputationRepository) {
         this.reputationRepository = reputationRepository;
     }
 
+    public void setLogger(Logger logger) {
+        this.logger = logger;
+    }
+
     public int getVillageScore(UUID playerUuid, String villageId) {
+        if (isVillageInMourning(villageId)) {
+            return 0;
+        }
         return reputationRepository.findByPlayerAndVillage(playerUuid, villageId)
                 .map(VillageReputation::score)
                 .orElse(0);
@@ -87,12 +104,12 @@ public final class ReputationService {
             case KILL, BREW -> 5;
             default -> 3;
         };
-        adjustSpeakerReputation(quest.playerUuid(), quest.chiefId(), speakerDelta, "quest:" + quest.type().name().toLowerCase());
+        adjustSpeakerReputation(quest.playerUuid(), quest.villageId(), quest.speakerId(), speakerDelta, "quest:" + quest.type().name().toLowerCase());
         return adjustVillageReputation(quest.playerUuid(), quest.villageId(), villageDelta, "quest:" + quest.type().name().toLowerCase());
     }
 
     public VillageReputation applyVillagerAssault(UUID playerUuid, String villageId, String speakerId) {
-        adjustSpeakerReputation(playerUuid, speakerId, -12, "villager_assault");
+        adjustSpeakerReputation(playerUuid, villageId, speakerId, -12, "villager_assault");
         return adjustVillageReputation(playerUuid, villageId, -3, "villager_assault");
     }
 
@@ -104,19 +121,23 @@ public final class ReputationService {
         long now = System.currentTimeMillis();
         VillageReputation existing = reputationRepository.findByPlayerAndVillage(playerUuid, villageId)
                 .orElse(new VillageReputation(playerUuid, villageId, 0, "initial", now));
-        int adjustedScore = clampScore(existing.score() + delta);
+        int oldScore = existing.score();
+        int adjustedScore = clampScore(oldScore + delta);
         VillageReputation updated = existing.withScore(adjustedScore, reason, now);
         reputationRepository.saveReputation(updated);
+        fireReputationEvent(playerUuid, villageId, null, oldScore, adjustedScore, ReputationScope.VILLAGE);
         return updated;
     }
 
-    public SpeakerReputation adjustSpeakerReputation(UUID playerUuid, String speakerId, int delta, String reason) {
+    public SpeakerReputation adjustSpeakerReputation(UUID playerUuid, String villageId, String speakerId, int delta, String reason) {
         long now = System.currentTimeMillis();
         SpeakerReputation existing = reputationRepository.findByPlayerAndSpeaker(playerUuid, speakerId)
                 .orElse(new SpeakerReputation(playerUuid, speakerId, 0, "initial", now));
-        int adjustedScore = clampScore(existing.score() + delta);
+        int oldScore = existing.score();
+        int adjustedScore = clampScore(oldScore + delta);
         SpeakerReputation updated = existing.withScore(adjustedScore, reason, now);
         reputationRepository.saveReputation(updated);
+        fireReputationEvent(playerUuid, villageId, speakerId, oldScore, adjustedScore, ReputationScope.SPEAKER);
         return updated;
     }
 
@@ -124,17 +145,23 @@ public final class ReputationService {
         long now = System.currentTimeMillis();
         VillageReputation existing = reputationRepository.findByPlayerAndVillage(playerUuid, villageId)
                 .orElse(new VillageReputation(playerUuid, villageId, 0, "initial", now));
-        VillageReputation updated = existing.withScore(clampScore(score), reason, now);
+        int oldScore = existing.score();
+        int clampedScore = clampScore(score);
+        VillageReputation updated = existing.withScore(clampedScore, reason, now);
         reputationRepository.saveReputation(updated);
+        fireReputationEvent(playerUuid, villageId, null, oldScore, clampedScore, ReputationScope.VILLAGE);
         return updated;
     }
 
-    public SpeakerReputation setSpeakerReputation(UUID playerUuid, String speakerId, int score, String reason) {
+    public SpeakerReputation setSpeakerReputation(UUID playerUuid, String villageId, String speakerId, int score, String reason) {
         long now = System.currentTimeMillis();
         SpeakerReputation existing = reputationRepository.findByPlayerAndSpeaker(playerUuid, speakerId)
                 .orElse(new SpeakerReputation(playerUuid, speakerId, 0, "initial", now));
-        SpeakerReputation updated = existing.withScore(clampScore(score), reason, now);
+        int oldScore = existing.score();
+        int clampedScore = clampScore(score);
+        SpeakerReputation updated = existing.withScore(clampedScore, reason, now);
         reputationRepository.saveReputation(updated);
+        fireReputationEvent(playerUuid, villageId, speakerId, oldScore, clampedScore, ReputationScope.SPEAKER);
         return updated;
     }
 
@@ -144,5 +171,46 @@ public final class ReputationService {
 
     public Optional<VillageReputation> find(UUID playerUuid, String villageId) {
         return reputationRepository.findByPlayerAndVillage(playerUuid, villageId);
+    }
+
+    /**
+     * Löscht alle Speaker-Reputations-Einträge für eine speakerId und
+     * setzt das Dorf temporär auf Ruf=0 (Trauer).
+     */
+    public void resetSpeakerReputation(String speakerId, String villageId) {
+        reputationRepository.removeAllSpeakerReputation(speakerId);
+        if (logger != null) {
+            logger.info("Reputation: removed all speaker-reputation for speakerId=" + speakerId
+                    + ", mourning villageId=" + villageId);
+        }
+    }
+
+    public void beginVillageMourning(String villageId) {
+        mourningVillageIds.add(villageId);
+        if (logger != null) {
+            logger.info("Mourning started for village " + villageId);
+        }
+    }
+
+    public void endVillageMourning(String villageId) {
+        mourningVillageIds.remove(villageId);
+        if (logger != null) {
+            logger.info("Mourning ended for village " + villageId);
+        }
+    }
+
+    public boolean isVillageInMourning(String villageId) {
+        return mourningVillageIds.contains(villageId);
+    }
+
+    private void fireReputationEvent(UUID playerUuid, String villageId, @Nullable String speakerId,
+            int oldReputation, int newReputation, ReputationScope scope) {
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null) {
+            return;
+        }
+        ReputationChangedEvent event = new ReputationChangedEvent(
+                player, villageId, speakerId, oldReputation, newReputation, scope);
+        Bukkit.getPluginManager().callEvent(event);
     }
 }

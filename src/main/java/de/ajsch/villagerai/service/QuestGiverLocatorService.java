@@ -1,9 +1,7 @@
 package de.ajsch.villagerai.service;
 
-import de.ajsch.villagerai.model.Chief;
 import de.ajsch.villagerai.model.Quest;
-import de.ajsch.villagerai.model.VillagerProfile;
-import de.ajsch.villagerai.storage.VillagerProfileRepository;
+import de.ajsch.villagerai.model.Speaker;
 import java.util.Optional;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -11,20 +9,16 @@ import org.bukkit.entity.Villager;
 
 public final class QuestGiverLocatorService {
 
-    private final ChiefService chiefService;
-    private final VillagerProfileRepository villagerProfileRepository;
+    private final SpeakerService speakerService;
 
-    public QuestGiverLocatorService(
-            ChiefService chiefService,
-            VillagerProfileRepository villagerProfileRepository) {
-        this.chiefService = chiefService;
-        this.villagerProfileRepository = villagerProfileRepository;
+    public QuestGiverLocatorService(SpeakerService speakerService) {
+        this.speakerService = speakerService;
     }
 
     public Optional<Location> findQuestGiverLocation(Quest quest) {
         for (org.bukkit.World world : Bukkit.getWorlds()) {
             for (Villager villager : world.getEntitiesByClass(Villager.class)) {
-                if (matchesQuestGiver(villager, quest.chiefId())) {
+                if (matchesQuestGiver(villager, quest.speakerId())) {
                     return Optional.of(villager.getLocation());
                 }
             }
@@ -35,8 +29,8 @@ public final class QuestGiverLocatorService {
     public String resolveQuestGiverName(Quest quest) {
         for (org.bukkit.World world : Bukkit.getWorlds()) {
             for (Villager villager : world.getEntitiesByClass(Villager.class)) {
-                if (matchesQuestGiver(villager, quest.chiefId())) {
-                    return chiefService.getConversationSpeaker(villager).chatName();
+                if (matchesQuestGiver(villager, quest.speakerId())) {
+                    return speakerService.getSpeaker(villager).map(Speaker::displayName).orElse("Questgeber");
                 }
             }
         }
@@ -44,12 +38,9 @@ public final class QuestGiverLocatorService {
     }
 
     public boolean matchesQuestGiver(Villager villager, String speakerId) {
-        Optional<Chief> chief = chiefService.getChief(villager);
-        if (chief.map(Chief::chiefId).filter(speakerId::equals).isPresent()) {
-            return true;
-        }
-
-        Optional<VillagerProfile> profile = villagerProfileRepository.findByEntityUuid(villager.getUniqueId());
-        return profile.map(VillagerProfile::speakerId).filter(speakerId::equals).isPresent();
+        return speakerService.getSpeaker(villager)
+                .map(Speaker::speakerId)
+                .filter(speakerId::equals)
+                .isPresent();
     }
 }

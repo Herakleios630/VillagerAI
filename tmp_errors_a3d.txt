@@ -1,0 +1,203 @@
+
+> Task :compileJava FAILED
+.\gradlew.bat : C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command
+\ChiefCommand.java:193: Fehler: Symbol nicht gefunden
+In Zeile:1 Zeichen:122
++ ... -Recurse -Force build 2>$null; .\gradlew.bat compileJava 2>&1 | Out-F ...
++                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Users\ajsch\... nicht gefunden:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+        Chief chief = (args.length >= 2 && !args[1].isBlank())
+        ^
+  Symbol: Klasse Chief
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:198: Fehler: Symbol nicht gefunden
+                .append(Component.text(speaker.speakerId(), NamedTextColor.WHITE))
+                                       ^
+  Symbol: Variable speaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:200: Fehler: Symbol nicht gefunden
+                .append(Component.text(speaker.villageId(), NamedTextColor.WHITE)));
+                                       ^
+  Symbol: Variable speaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:345: Fehler: Symbol nicht gefunden
+        var villageIdentity = speaker.<de.ajsch.villagerai.model.VillageIdentity>map(foundChief ->
+                              ^
+  Symbol: Variable speaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:347: Fehler: Symbol nicht gefunden
+                    foundSpeaker.villageId(),
+                    ^
+  Symbol: Variable foundSpeaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:348: Fehler: Symbol nicht gefunden
+                    foundSpeaker.villageName(),
+                    ^
+  Symbol: Variable foundSpeaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:359: Fehler: Symbol nicht gefunden
+            || speaker.map(foundChief -> foundSpeaker.speakerId().equals(activeQuest.speakerId())).orElse(false));
+               ^
+  Symbol: Variable speaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:359: Fehler: Symbol nicht gefunden
+            || speaker.map(foundChief -> foundSpeaker.speakerId().equals(activeQuest.speakerId())).orElse(false));
+                                         ^
+  Symbol: Variable foundSpeaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:363: Warnung: [removal] name() in OldEnum ist veraltet und wurde zum Entfernen markiert
+        sender.sendMessage(Component.text("Beruf: " + villager.getProfession().name(), NamedTextColor.WHITE));
+                                                                              ^
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:374: Fehler: Symbol nicht gefunden
+                speaker.map(Speaker::speakerId).orElseGet(() -> 
+speakerService.createOrRefreshProfile(villager).speakerId()));
+                ^
+  Symbol: Variable speaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:378: Fehler: Symbol nicht gefunden
+                speaker.map(Speaker::speakerId).orElseGet(() -> 
+speakerService.createOrRefreshProfile(villager).speakerId()));
+                ^
+  Symbol: Variable speaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:387: Fehler: Symbol nicht gefunden
+                        speaker.map(Speaker::speakerId).orElseGet(() -> 
+speakerService.createOrRefreshProfile(villager).speakerId())) + ")",
+                        ^
+  Symbol: Variable speaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:394: Fehler: Symbol nicht gefunden
+                        speaker.map(Speaker::speakerId).orElseGet(() -> 
+speakerService.createOrRefreshProfile(villager).speakerId())) + ")",
+                        ^
+  Symbol: Variable speaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:399: Fehler: Symbol nicht gefunden
+                speaker.map(Speaker::speakerId).orElseGet(() -> 
+speakerService.createOrRefreshProfile(villager).speakerId()))
+                ^
+  Symbol: Variable speaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:408: Fehler: Symbol nicht gefunden
+                speaker.map(Speaker::speakerId).orElseGet(() -> 
+speakerService.createOrRefreshProfile(villager).speakerId()),
+                ^
+  Symbol: Variable speaker
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:627: Fehler: Symbol nicht gefunden
+                chief,
+                ^
+  Symbol: Variable chief
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:1087: Fehler: Symbol nicht gefunden
+                    chief, themeMaterial, "Du hast nach einer Aufgabe gefragt.", difficultyTier);
+                    ^
+  Symbol: Variable chief
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:1164: Fehler: Symbol nicht gefunden
+                chief,
+                ^
+  Symbol: Variable chief
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:1216: Fehler: Symbol nicht gefunden
+                chief,
+                ^
+  Symbol: Variable chief
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\command\ChiefCommand.ja
+va:1282: Fehler: Symbol nicht gefunden
+                chief,
+                ^
+  Symbol: Variable chief
+  Ort: Klasse ChiefCommand
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\VillageChiefPlugin.java
+:286: Fehler: Symbol nicht gefunden
+            conversationSettings.recentChiefRepliesLimit(),
+                                ^
+  Symbol: Methode recentChiefRepliesLimit()
+  Ort: Variable conversationSettings von Typ RuntimeSettings
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\VillageChiefPlugin.java
+:473: Fehler: Symbol nicht gefunden
+            chiefService.reloadProfiles(dataLoader.loadChiefProfilesSection());
+                        ^
+  Symbol: Methode reloadProfiles(ConfigurationSection)
+  Ort: Variable chiefService von Typ ChiefService
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\service\ChiefService.ja
+va:308: Fehler: Symbol nicht gefunden
+            dropped.setUnlimitedLife(true);
+                   ^
+  Symbol: Methode setUnlimitedLife(boolean)
+  Ort: Variable dropped von Typ Item
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\service\ChiefService.ja
+va:364: Warnung: [removal] name() in OldEnum ist veraltet und wurde zum Entfernen markiert
+        return profession.name().toUpperCase(java.util.Locale.ROOT);
+                         ^
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\service\SpeakerService.
+java:286: Warnung: [removal] name() in OldEnum ist veraltet und wurde zum Entfernen markiert
+        return profession.name().toUpperCase(Locale.ROOT);
+                         ^
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\service\VillageIdentity
+Service.java:353: Warnung: [removal] name() in OldEnum ist veraltet und wurde zum Entfernen markiert
+        String biomeName = biome.name();
+                                ^
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\service\VillageIdentity
+Service.java:451: Warnung: [removal] name() in OldEnum ist veraltet und wurde zum Entfernen markiert
+        return biome.name().toLowerCase(Locale.ROOT).replace('_', ' ');
+                    ^
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\service\VillageIdentity
+Service.java:455: Warnung: [removal] name() in OldEnum ist veraltet und wurde zum Entfernen markiert
+        String biomeName = biome.name();
+                                ^
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\service\VillagerContext
+Service.java:39: Warnung: [removal] name() in OldEnum ist veraltet und wurde zum Entfernen markiert
+            villager.getProfession().name(),
+1 actionable task: 1 executed
+                                    ^
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\service\VillagerContext
+Service.java:66: Warnung: [removal] name() in OldEnum ist veraltet und wurde zum Entfernen markiert
+        String profession = villager.getProfession().name().toUpperCase(Locale.ROOT);
+                                                    ^
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\service\ChiefVisualServ
+ice.java:322: Warnung: [removal] values() in PatternType ist veraltet und wurde zum Entfernen markiert
+        PatternType[] types = PatternType.values();
+                                         ^
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\src\main\java\de\ajsch\villagerai\listener\QuestLifecycle
+Listener.java:299: Warnung: [removal] name() in OldEnum ist veraltet und wurde zum Entfernen markiert
+        String raw = villager.getProfession().name().toLowerCase(Locale.ROOT).replace('_', ' ');
+                                             ^
+Hinweis: Einige Eingabedateien verwenden oder ??berschreiben eine veraltete API.
+Hinweis: Wiederholen Sie die Kompilierung mit -Xlint:deprecation, um Details zu erhalten.
+22 Fehler
+10 Warnungen
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler error output for details.
+
+* Try:
+> Run with --info option to get more log output.
+> Run with --scan to get full insights.
+
+BUILD FAILED in 1s

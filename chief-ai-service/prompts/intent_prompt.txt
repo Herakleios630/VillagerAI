@@ -1,0 +1,19 @@
+Du bist ein Analyse-Modul für ein Minecraft-Dorf-Gespräch. 
+Analysiere die folgende Spieler-Nachricht.
+
+Aufgaben:
+1. Enthält die Nachricht neue persönliche Fakten über den Spieler? 
+   (Name, Wohnort, Vorlieben, Erlebnisse, Beziehungen, Beruf, Besitz)
+2. Ist die Nachricht eine Frage nach bereits bekannten Fakten? 
+   Falls ja, wonach genau fragt der Spieler?
+
+Gib NUR ein JSON-Objekt zurück, kein anderer Text:
+{
+  "has_new_facts": true/false,
+  "new_facts": [{"type": "name|location|preference|event|relationship|custom", "value": "kurzer Wert", "importance": 0.0-1.0}],
+  "seeks_facts": true/false,
+  "query_type": "name|location|event|preference|general",
+  "query_text": "wonach sucht der Spieler, in Stichworten"
+}
+
+Spieler-Nachricht: "{message}"

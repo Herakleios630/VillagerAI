@@ -11,6 +11,9 @@ Paper-Plugin-MVP fuer sprechende Dorfhauptlinge mit sauber getrenntem Event-, Se
 
 ## Aktueller Stand
 
+"- `SpeakerRepository`-Interface und `YamlSpeakerRepository`-Implementierung als zentrales Repository für alle gesprächsfähigen Dorfbewohner (`speakers.yml`) – speichert Speaker-Daten ohne Chief-Attribute oder Dorf-Identitätsfelder
+- Neues Datenmodell `Speaker` (Record) als zentrales Gespraechsobjekt in `model/Speaker.java` – buendelt alle Speaker-Felder und nutzt `SpeakerStatus`-Enum (AKTIV_CHIEF, GEWESENER_CHIEF, NORMALER_DORFBEWOHNER)"
+- Debug-Partikelmarker fuer dunkle Bloecke in SECURE-Quests (rote Dust-Partikel, konfigurierbar ueber `debug.village-light-particle-marker`)
 - HTTP-Bridge mit `ollama` und `deepseek` als umschaltbaren Providern vorhanden
 - Normale Villager sprechen ueber stabile Sprecher-Profile und koennen funktional Quests vergeben
 - Dorfkontext reicht aktuell Dorfname, Beschreibung, grobe Merkmale, Biom, geschaetzte Bewohnerzahl und ein wichtiges Dorfereignis bis in den AI-Request
@@ -273,7 +276,9 @@ Manuelle Test-Commands fuer diese Typen:
 - `quests.yml` und `QuestRepository` fuer spaetere Quest-Vergabe
 - `conversation-history.yml` und `ConversationHistoryRepository` fuer getrennte Gespraechshistorie
 - modulare Python-Bridge unter `chief-ai-service/chief_ai_service`
-- kuratierte Wissenspakete im Verzeichnis `chief-ai-service/knowledge-packets`
+"- kuratierte Wissenspakete im Verzeichnis `chief-ai-service/knowledge-packets`
+- `embedding_client.py` – Ollama-Client für Embeddings (`nomic-embed-text`), Cosinus-Ähnlichkeit, BLOB-Serialisierung
+- **Langzeitgedächtnis – faktenbasiert**: `player_facts`-Tabelle mit FTS5+Embedding-Hybridsuche, Integrationstest 13/13 grün – siehe `docs/developer-guide.md`"
 
 ## Entwickler-Doku
 

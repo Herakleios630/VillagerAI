@@ -1,8 +1,8 @@
 package de.ajsch.villagerai.listener;
 
-import de.ajsch.villagerai.model.Chief;
-import de.ajsch.villagerai.service.ChiefService;
+import de.ajsch.villagerai.model.Speaker;
 import de.ajsch.villagerai.service.ReputationService;
+import de.ajsch.villagerai.service.SpeakerService;
 import de.ajsch.villagerai.service.VillageIdentityService;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -15,15 +15,15 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 
 public final class ReputationListener implements Listener {
 
-    private final ChiefService chiefService;
+    private final SpeakerService speakerService;
     private final VillageIdentityService villageIdentityService;
     private final ReputationService reputationService;
 
     public ReputationListener(
-            ChiefService chiefService,
+            SpeakerService speakerService,
             VillageIdentityService villageIdentityService,
             ReputationService reputationService) {
-        this.chiefService = chiefService;
+        this.speakerService = speakerService;
         this.villageIdentityService = villageIdentityService;
         this.reputationService = reputationService;
     }
@@ -37,16 +37,22 @@ public final class ReputationListener implements Listener {
             return;
         }
 
-        String villageId = chiefService.getChief(villager)
-                .map(Chief::villageId)
+        // Chiefs lösen keinen Assault-Penalty aus – ihr Tod triggert die
+        // Trauerphase, die den Ruf aller Spieler im Dorf auf 0 setzt.
+        if (speakerService.getSpeaker(villager).map(Speaker::isChief).orElse(false)) {
+            return;
+        }
+
+        String villageId = speakerService.getSpeaker(villager)
+                .map(Speaker::villageId)
                 .orElseGet(() -> villageIdentityService.resolve(villager).villageId());
-        String speakerId = chiefService.getChief(villager)
-            .map(Chief::chiefId)
-            .orElseGet(() -> chiefService.createConversationProfile(villager).chiefId());
+        String speakerId = speakerService.getSpeaker(villager)
+                .map(Speaker::speakerId)
+                .orElseGet(() -> speakerService.createOrRefreshProfile(villager).speakerId());
         int villageScore = reputationService.applyVillagerAssault(player.getUniqueId(), villageId, speakerId).score();
         int speakerScore = reputationService.getSpeakerScore(player.getUniqueId(), speakerId);
         player.sendMessage(Component.text(
-            "Dorfruf sinkt auf " + villageScore + ", dieser Villager merkt sich dich jetzt mit " + speakerScore + ".",
+                "Dorfruf sinkt auf " + villageScore + ", dieser Villager merkt sich dich jetzt mit " + speakerScore + ".",
                 NamedTextColor.RED));
     }
 }

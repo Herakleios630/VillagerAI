@@ -1,9 +1,10 @@
 package de.ajsch.villagerai.model;
 
 import java.util.UUID;
+import org.jetbrains.annotations.Nullable;
 
 public record AIRequest(
-        String chiefId,
+        String speakerId,
         String villageId,
         String villageName,
         String villageDescription,
@@ -11,12 +12,12 @@ public record AIRequest(
         String villageBiome,
         int villagePopulationEstimate,
         String villageEventSummary,
-        String chiefName,
-        String chiefRole,
-        String chiefPersonality,
-        String chiefTone,
-        String chiefBehaviorHint,
-        String chiefGreeting,
+        String displayName,
+        String role,
+        String personality,
+        String speechTone,
+        String behaviorHint,
+        String greeting,
         String villagerProfession,
         String villagerType,
         String currentBiome,
@@ -45,6 +46,14 @@ public record AIRequest(
         String combinedReputationSummary,
         int reputationScore,
         String reputationSummary,
+        boolean villageHasChief,
+                boolean villageMourning,
+                String chiefLocation,
+                String speakerStatus,
+                String chiefNarrative,
+                @Nullable ChiefAttributes chiefAttributes,
         UUID playerUuid,
-        String playerMessage) {
+        String playerMessage,
+        boolean memoryEnabled,
+        java.util.List<String> memoryTriggerFallbackPhrases) {
 }

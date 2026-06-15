@@ -1,231 +1,225 @@
-# VillagerAI Developer Guide
+# Developer Guide – VillagerAI
 
-Kurzueberblick fuer Weiterarbeit mit beliebiger KI oder manuell.
+Stand: 2026-01-12
 
-Fuer eine direkte Projektuebergabe mit Status, Prioritaeten und Startreihenfolge siehe [docs/handover.md](docs/handover.md).
+## Architektur-Übersicht
 
-## Repo-Aufteilung
+```
+VillagerAI-Plugin (Java 21, Paper 1.21.4)
+├── config/           # PluginDataLoader – lädt YAML-Configs, validiert Settings
+├── model/            # DTOs: Chief, Quest, AIRequest, AIReply, Reputation, Speaker, SpeakerStatus, ...
+├── storage/          # Yaml-Repositories (Chief, Quest, ConversationHistory, Speaker, ...)
+├── service/          # Business-Logik: ChiefService, ConversationService, QuestService, ...
+├── listener/         # Bukkit-Event-Handler: PlayerChat, VillagerInteract, QuestLifecycle, ...
+├── command/          # /chief Command + TabCompleter
+├── ai/               # AIService-Interface + Implementierungen (Dummy, Http)
+└── util/             # Keys, EntityTargetingUtil
 
-- `src/main/java/de/ajsch/villagerai`: Paper-Plugin
-- `chief-ai-service`: separater lokaler HTTP-Bridge-Dienst
-- `Plannung`: Roadmap und Ideenstand
-- `docs`: technische Arbeitsdokumentation
+chief-ai-service/     # Python HTTP-Bridge (FastAPI)
+├── server.py         # Einstiegspunkt
+├── chief_ai_service/
+│   ├── http_app.py         # FastAPI-Routen + _store_turns_background()
+│   ├── prompt_builder.py   # Prompt-Konstruktion aus AIRequest-Payload
+│   ├── reply_builder.py    # Antwort-Parsing aus AI-Modell
+│   ├── deepseek_client.py
+│   ├── ollama_client.py
+│   ├── embedding_client.py # Ollama-Embeddings (nomic-embed-text), Cosinus-Ähnlichkeit
+│   └── ...
+├── tests/
+│   ├── test_memory_db.py          # Unit-Tests CRUD + Migration
+│   ├── test_embedding_client.py   # Unit-Tests Embedding
+│   ├── test_prompt_builder.py     # Unit-Tests Prompt-Struktur
+│   └── test_integration_50_turns.py # Integrationstest 50 Turns (5 Tests)
+└── knowledge-packets/    # JSON-Wissenspakete (always, situational, professions, ...)
+```
 
-## Plugin-Schichten
+## Schichten-Impact: Trauer-Prompt-Fix (2026-01-12)
 
-- Event Layer: Listener und Commands nehmen Bukkit-/Paper-Ereignisse an.
-- Service Layer: `ChiefService`, `ConversationService` und `QuestService` steuern Spielzustand.
-- AI Layer: `AIService`, `DummyAIService`, `HttpAIService` kapseln Antworterzeugung.
-- Storage Layer: `YamlChiefRepository`, `YamlQuestRepository` und `YamlConversationHistoryRepository` kapseln Chief-, Quest- und History-Daten.
-- Config/Data Loader: `PluginDataLoader` kapselt editierbare YAML-Daten und gruppierte Runtime-Settings fuer Bootstrap und Reload.
+### Problem
+Nach `/chief unset` war Trauerzustand korrekt gesetzt (Partikel, `villageHasChief=false`, `villageMourning=true`), aber die KI antwortete trotzdem mit lebendem Häuptling – weil `villageEventSummary` auf "ruhiger Alltag" stand und alte History-Turns vom lebenden Chief widersprachen.
 
-## AI-Bridge-Schichten
+### Fix
 
-- `chief-ai-service/server.py`: sehr duenner Entry-Point.
-- `chief-ai-service/chief_ai_service/config.py`: Defaults und `config.json` laden.
-- `chief-ai-service/chief_ai_service/http_app.py`: HTTP-Endpunkte `/health` und `/v1/chief/reply`.
-- `chief-ai-service/chief_ai_service/reply_builder.py`: Provider-Auswahl und Dummy-Fallback.
-- `chief-ai-service/chief_ai_service/prompt_builder.py`: gemeinsamer Modellprompt aus Plugin-Systemprompt, Rollen- und Dorfkontext.
-- `chief-ai-service/chief_ai_service/ollama_client.py`: HTTP-Call zu Ollama.
-- `chief-ai-service/chief_ai_service/deepseek_client.py`: HTTP-Call zu DeepSeek Cloud.
-- `chief-ai-service/chief_ai_service/reply_sanitizer.py`: entfernt technische Leaks aus Modellantworten.
+| Schicht | Datei | Änderung |
+|---------|-------|----------|
+| Service | `VillageIdentityService.java` | `setMourningService()`-Setter + `buildVillageEventSummary()` prüft Trauer vor Wetter/Tageszeit |
+| Service | `VillageChiefPlugin.java` | `villageIdentityService.setMourningService(mourningService)` nach MourningService-Erzeugung |
+| Service | `ConversationService.java` | Debug-Felder `chief-exists`→`villager-exists`, `chief-alive`→`villager-alive` |
+| Bridge | `prompt_builder.py` | `mourning_guidance` um Widerspruchshinweis ergänzt: "Fruehere Aussagen in der Konversation ueber einen lebenden Haeuptling sind ueberholt ... Ignoriere sie vollstaendig." |
 
-## Laufzeitfluss
+"### Neue Abhängigkeit
+`VillageIdentityService` hat jetzt einen optionalen `MourningService` via Setter. Der Setter wird in `VillageChiefPlugin.onEnable()` nach Erzeugung beider Services aufgerufen.
 
-1. Spieler startet per Rechtsklick ein Gespraech.
-2. `ConversationService` erzeugt einen `AIRequest` mit Chief-Profil.
-3. `ConversationService` schreibt Player- und Chief-Nachrichten in die Conversation-History.
-4. `HttpAIService` sendet JSON an den lokalen Bridge-Dienst.
-5. Die Bridge uebernimmt den Plugin-Systemprompt, baut daraus den Modellkontext und fragt den gewaehlten Provider ab.
-6. Die bereinigte Antwort geht zurueck ins Plugin und wird im Chat angezeigt.
+### Entkopplung MourningService ↔ ChiefService (2026-01-16)
+Zirkuläre Abhängigkeit aufgelöst: `MourningService` bekommt `ChiefService` nicht mehr im Konstruktor, sondern per `setChiefService()`-Setter (nicht-finales Feld). Initialisierungsreihenfolge in `onEnable()`:
+1. `MourningService` erzeugen (ohne ChiefService)
+2. `ChiefService` erzeugen (bekommt mourningService im Konstruktor)
+3. `mourningService.setChiefService(chiefService)` nachträglich verdrahten"
 
-## Neue Datenmodelle
+## Datenfluss AI-Request
 
-- `Quest`, `QuestType`, `QuestStatus`: stabile Grundlage fuer spaetere Quest-Logik.
-- `ConversationHistory`, `ConversationTurn`, `ConversationRole`: getrennte Gespraechshistorie pro Spieler und Chief.
-- Die Dateien `quests.yml` und `conversation-history.yml` sind absichtlich schon jetzt getrennt, damit spaetere Erweiterungen keine `chiefs.yml` ueberladen.
+```
+VillagerInteractListener → ConversationService.startConversation()
+  → handlePlayerChat()
+    → VillageIdentityService.resolve()        [Dorfkontext + Trauer-EventSummary]
+    → ConversationHistoryRepository.findHistory() [alte Gesprächs-Turns]
+    → ReputationService.getScores()            [Ruf-Werte]
+    → MourningService.isVillageInMourning()    [Trauer-Flag]
+    → new AIRequest(...)                       [Alles in ein DTO]
+    → aiService.generateReply(request)         [HTTP POST → Bridge]
+      → prompt_builder.build_context_prompt()  [Python: Prompt aus Payload]
+      → LLM (DeepSeek/Ollama)                  [Inferenz]
+      → reply_builder.extract_reply()          [Antwort-String]
+    → ConversationHistoryRepository.appendTurn() [Antwort speichern]
+    → sendChiefMessage()                       [Chat-Ausgabe an Spieler]
+```
 
-## Questtypen und Progress-Hooks
+## Datenfluss Facts-Pipeline (Worker, asynchron)
 
-Der aktuelle Queststand deckt folgende Typen ab:
+```
+http_app.do_POST()                                               [Sync-Pfad]
+  → FactsWorker.enqueue(player_uuid, chief_name, message)        [Fire-and-forget]
 
-- `TALK`: Abschluss beim Gespraechsstart mit dem Ziel-Questgeber
-- `FETCH`: Fortschritt aus Inventar-Sync
-- `DELIVER`: Hand-in beim Questgeber (Teilabgaben moeglich)
-- `REPAIR`: Hand-in beim Questgeber (Teilabgaben moeglich)
-- `BREW`: Hand-in beim Questgeber (Teilabgaben moeglich)
-- `KILL`: Fortschritt ueber `EntityDeathEvent`
-- `BUILD`: Fortschritt ueber `BlockPlaceEvent`
-- `BREED`: Fortschritt ueber `EntityBreedEvent`
-- `VISIT`: Fortschritt ueber Zielradius
+FactsWorker._run_loop() (daemon thread)                          [Async-Pfad]
+  → _drain() → pop left
+  → _analyze_facts(player_uuid, chief_name, message)
+    1. _classify_intent(message)          [qwen2.5:3b / intent_prompt.txt]
+       ├─ has_new_facts: true/false
+       ├─ new_facts: [{type, value, importance}]
+       ├─ seeks_facts: true/false
+       └─ query_text: ""
+       Fallback: _FALLBACK_MEMORY_TRIGGER_RE (Regex)
 
-Wichtig fuer neue Questtypen: `QuestType`, `QuestService`, `QuestOfferService`, `QuestLifecycleListener`, `ConversationService`, `ChiefCommand`, `PluginDataLoader` sowie `quest-offers.yml` und `quest-rewards.yml` immer gemeinsam erweitern.
+    2. IF has_new_facts → _extract_facts(message)  [qwen2.5:3b / extraction_prompt.txt]
+       └─ facts: [{type, value, importance}]
+       Fallback: verwendet new_facts aus Intent-Result
 
-## Aktueller Dorfkontext
+    3. FOR EACH extracted fact → _dedup_and_store()
+       ├─ query_facts_by_type(player_uuid, chief_name, fact_type)
+       ├─ embedding_client.get_embedding(fact_type + ": " + fact_value)
+       ├─ cosine_similarity gegen alle existierenden Facts
+       ├─ sim < 0.70 → INSERT (neu)
+       ├─ sim >= 0.85 → UPDATE (bestätigen)
+       └─ 0.70 <= sim < 0.85 → _ask_dedup_decider() [qwen2.5:3b / dedup_prompt.txt]
 
-`VillageIdentityService` liefert aktuell folgende Felder fuer den Dorfkontext:
+    4. IF seeks_facts → _mark_pending_retrieval()  [Paket D: Retrieval + Relevanz-Filter → pending cache]
 
-- `villageId`
-- `villageName`
-- `villageDescription`
-- `villageAttributes`
-- `villageBiome`
-- `villagePopulationEstimate`
-- `villageEventSummary`
+  Fehlerbehandlung:
+  - qwen-Fehler → Fallback-Regex oder conservative decision (wie duplicate)
+  - embedding-Fehler → ohne Embedding speichern (kein Dedup)
+  - DB-Fehler → Exception, Worker retry (max 3x)
+```
 
-Diese Werte werden ueber `Chief`, `AIRequest` und den Bridge-Payload bis in `prompt_builder.py` weitergereicht.
+## player_facts Schema
 
-## Editierbare YAML-Dateien
+| Spalte | Typ | Beschreibung |
+|--------|-----|-------------|
+| id | INTEGER PK | Auto-Increment |
+| player_uuid | TEXT | Minecraft-Spieler-UUID |
+| chief_name | TEXT | Häuptlings-Name oder 'any' |
+| fact_type | TEXT | name, location, preference, event, relationship, profession, possession, custom |
+| fact_value | TEXT | Kurzer Fakt-Wert (max 8 Wörter) |
+| evidence_text | TEXT | Original-Nachricht als Beleg |
+| embedding | BLOB | nomic-embed-text Vector (768×8=6144 bytes) |
+| confidence | REAL | 0.0–1.0 (Dedup-Confirmation erhöht) |
+| importance | REAL | 0.0–1.0 (vom Modell geschätzt) |
+| times_confirmed | INTEGER | Dedup-Update-Zähler |
+| first_seen_at | TEXT | Ersterkennungs-Zeitstempel |
+| last_seen_at | TEXT | Letzte Aktualisierung |
+| source_turn_id | INTEGER | FK → conversation_turns.id |
+| is_deleted | INTEGER | Soft-Delete-Flag (0/1) |
 
-- `config.yml`: technische Laufzeit- und Feature-Schalter.
-- `chief-profiles.yml`: Chief-Defaults fuer Legacy-Chiefs, Berufsprofile fuer normale Villager und gemeinsame Archetypen.
-- `quest-offers.yml`: Quest-Templates pro Beruf.
-- `quest-rewards.yml`: Rewards pro Questtyp; einzelne `bonus-items` koennen optionale `quality-tiers` fuer qualitaetsabhaengige Upgrade-Materialien enthalten.
+FTS5-Index: facts_fts(fact_type, fact_value, evidence_text)
 
-Semantik von `chief-profiles.yml`:
+## Datenfluss Facts-Retrieval & Relevanz-Filter (Paket D)
 
-- `chief`: nur fuer explizit markierte `/chief set`-Chiefs.
-- `professions`: Defaults fuer normale sprechende Villager nach Beruf.
-- `archetypes`: stilistische Varianten, die auf die Berufsdefaults aufgesetzt werden.
+```
+FactsWorker._mark_pending_retrieval()                             [Async-Pfad]
+  1. message_hash = md5(query_text) → Relevance-Cache prüfen
+     ├─ Cache HIT → fact_ids direkt in pending_relevant_facts speichern
+     └─ Cache MISS ↓
 
-Berufsprofile koennen jetzt optional ein eigenes `greeting-template` setzen. Wenn vorhanden, hat dieses Vorrang vor dem Greeting aus dem gewaehlten Archetyp.
+  2. search_facts_hybrid()                   [memory_db.py]
+     ├─ query_type "name":        FTS5 primary + Embedding secondary
+     ├─ query_type "location":    Embedding primary + FTS5 secondary
+     ├─ query_type "event":       Embedding only
+     ├─ query_type "preference":  Embedding primary + FTS5 secondary
+     └─ query_type "general":     FTS5 + Embedding combined equally
 
-Reward-Skalierung:
+     → Score = cosine_sim × 0.6 + (times_confirmed/max) × 0.2 + importance × 0.2
+     → Top-N Kandidaten (config: facts.retrieval_top_n_candidates, default 10)
 
-- `quests.rewards.reputation` in `config.yml` steuert die Ruf-Skalierung fuer Quest-Belohnungen.
-- Dorfruf bestimmt die freigeschaltete `quality-tier`-Stufe fuer Reward-Items.
-- Villager-Ruf bestimmt den Mengen-Multiplikator fuer XP, Emeralds und Item-Anzahl.
-- `/chief reload` laedt diese Werte neu, ebenso `quest-rewards.yml`.
+  3. IF len(candidates) > max_facts_per_prompt → _filter_relevance() [qwen2.5:3b]
+     ├─ relevance_prompt.txt: Kandidatenliste + Spieler-Frage → JSON-Array [id, ...]
+     └─ Fallback: Top-N nach Score
 
-## Skalierungsidee fuer alle Villager
+  4. Ergebnis in pending_relevant_facts dict speichern
+     Key: (player_uuid, chief_name) → List[fact_id]
 
-- Der teure Teil ist die KI-Anfrage, nicht der blosse Villager im Spiel.
-- Solange nur bei echter Interaktion angefragt wird, ist "alle Villager koennen reden" auf kleinem Server plausibel.
-- Fuer spaeter sollte ein leichtes Queue-/Busy-System eingeplant bleiben, damit gleichzeitige Anfragen nicht ungebremst wachsen.
-- Villager-Berufe sollten aus Bukkit-Daten gelesen und als Rollenkontext in den Prompt eingespeist werden.
+  5. Relevance-Cache aktualisieren (TTL: facts.relevance_cache_minutes, default 5min)
+     Key: (player_uuid, query_type, message_hash) → (expiry_ts, List[fact_id])
 
-## Aktueller Live-Betrieb
+reply_builder._load_memory_context()                               [Sync-Pfad]
+  1. get_pending_relevant_facts(player_uuid, chief_name) → List[fact_id]
+  2. get_facts_for_player() → Facts nach ID auflösen
+  3. Clear pending cache nach erfolgreichem Laden
+  4. Facts an prompt_builder.build_context_prompt() übergeben
 
-- Plugin-Deployment: schattiertes Jar aus `build/libs/VillagerAI-0.1.0-SNAPSHOT.jar`
-- Ubuntu AI-Bridge: `/opt/villagerai/chief-ai-service`
-- Ubuntu Paper-Plugin-Ordner: `/home/mc/crafty-4/servers/f5334260-43a9-4b27-9c7d-746f4c1aa528/plugins`
-- Provider: DeepSeek ueber die lokale HTTP-Bridge ist verifiziert; Ollama bleibt weiterhin als Bridge-Provider unterstuetzt
+prompt_builder._build_facts_section()
+  → Kompakte Bullet-Liste:
+    "--- Fakten ueber den Spieler ---
+     - name: Arno (x3 bestaetigt)
+     - location: im Wald nördlich des Dorfes"
 
-## Build- und Deploy-Ablauf
+Config (config.json):
+  memory.facts_search: true/false        [Feature-Flag für Fakten-Retrieval]
+  facts.retrieval_top_n_candidates: 10   [Kandidatenlimit für Hybrid-Suche]
+  facts.max_facts_per_prompt: 5          [Relevanz-Filter-Schwelle]
+  facts.relevance_cache_minutes: 5       [TTL für Relevance-Cache]
+```
 
-### Plugin lokal bauen
-
-Windows lokal:
+## Build & Deploy
 
 ```powershell
-.\gradlew.bat compileJava
-.\gradlew.bat shadowJar
+# Build
+.\gradlew.bat shadowJar -x test
+
+# Deploy Plugin-JAR
+scp "build\libs\VillagerAI-0.1.0-SNAPSHOT.jar" mc@10.0.0.86:"/home/mc/crafty-4/servers/f5334260-43a9-4b27-9c7d-746f4c1aa528/plugins/VillagerAI-0.1.0-SNAPSHOT.jar"
+
+# Nur wenn YAML-Configs geändert:
+scp "src\main\resources\config.yml" mc@10.0.0.86:"/home/mc/crafty-4/servers/f5334260-43a9-4b27-9c7d-746f4c1aa528/plugins/VillagerAI/config.yml"
+
+# Nur wenn Bridge-Python geändert:
+ssh mc@10.0.0.86 "sudo systemctl restart villagerai-chief"
+
+# Immer nach Plugin-Deploy:
+ssh mc@10.0.0.86 "sudo systemctl restart crafty"
 ```
 
-Wichtig: Das deploybare Plugin ist `build/libs/VillagerAI-0.1.0-SNAPSHOT.jar`, nicht das `-plain.jar`.
+"Reihenfolge bei Änderungen an beiden (Plugin + Bridge): Erst Bridge, dann Crafty.
 
-### Bridge lokal pruefen
+## Integrationstest 50 Turns (4a-16)
 
-Im Verzeichnis `chief-ai-service`:
+- Datei: `chief-ai-service/tests/test_integration_50_turns.py`
+- 5 Tests, alle grün:
+  - `FiftyTurnsSummaryTriggerTest`: 50 Turn-Paare → Summary bei 20/40, Rolling-Continuation
+  - `TriggerPhraseEmbeddingSearchTest`: Trigger-Phrasen-Erkennung (6 Positiv/5 Negativ) + Embedding-Suche
+  - `DbPersistenceTest`: DB nach Neustart (WAL-Checkpoint + migrate) mit allen Daten
+  - `OllamaIntegrationSmokeTest` (skipIf Ollama nicht verfügbar): Echte Embeddings + SummaryClient
+- Jeder Test bekommt eine eigene temp SQLite-DB (per-method isolation)
+- Bekanntes Problem: `SummaryClient` nutzt `/api/generate` für Modellwechsel, aber `nomic-embed-text`
+  unterstützt keinen Generate-Endpoint → graceful degradation liefert Fallback-Summary"
 
-```powershell
-python -m compileall .
-python .\batch_prompt_probe.py --mode prompt --count 5 --output .\out\prompt-smoke.jsonl
-```
+## Integrationstest Fakten-System (Paket H)
 
-### Plugin auf den Server kopieren
-
-```powershell
-scp ".\build\libs\VillagerAI-0.1.0-SNAPSHOT.jar" mc@10.0.0.86:/home/mc/crafty-4/servers/f5334260-43a9-4b27-9c7d-746f4c1aa528/plugins/VillagerAI-0.1.0-SNAPSHOT.jar
-```
-
-Bei Quest- oder Balancing-Aenderungen zusaetzlich:
-
-```powershell
-scp ".\src\main\resources\config.yml" mc@10.0.0.86:/home/mc/crafty-4/servers/f5334260-43a9-4b27-9c7d-746f4c1aa528/plugins/VillagerAI/config.yml
-scp ".\src\main\resources\quest-offers.yml" mc@10.0.0.86:/home/mc/crafty-4/servers/f5334260-43a9-4b27-9c7d-746f4c1aa528/plugins/VillagerAI/quest-offers.yml
-scp ".\src\main\resources\quest-rewards.yml" mc@10.0.0.86:/home/mc/crafty-4/servers/f5334260-43a9-4b27-9c7d-746f4c1aa528/plugins/VillagerAI/quest-rewards.yml
-```
-
-Danach auf dem Server:
-
-```bash
-sudo systemctl restart crafty
-```
-
-### Bridge-Dateien auf den Server kopieren
-
-Live-Zielstruktur:
-
-- `/opt/villagerai/chief-ai-service/config.json`
-- `/opt/villagerai/chief-ai-service/chief_ai_service/*.py`
-- `/opt/villagerai/chief-ai-service/knowledge-packets/*.json`
-
-Wenn direkter Write-Zugriff nach `/opt` fehlt, zuerst in ein Home-Stagingverzeichnis kopieren und danach per `sudo cp` uebernehmen.
-
-Beispiel fuer den finalen Live-Schritt auf dem Server:
-
-```bash
-sudo cp /home/mc/villagerai-deploy/bridge_stage/chief_ai_service/config.py /opt/villagerai/chief-ai-service/chief_ai_service/config.py
-sudo cp /home/mc/villagerai-deploy/bridge_stage/chief_ai_service/prompt_builder.py /opt/villagerai/chief-ai-service/chief_ai_service/prompt_builder.py
-sudo cp /home/mc/villagerai-deploy/bridge_stage/knowledge-packets/*.json /opt/villagerai/chief-ai-service/knowledge-packets/
-sudo systemctl restart villagerai-chief
-```
-
-### Restart-Matrix
-
-- Nur Plugin-Code oder Plugin-Configs geaendert: `crafty`
-- Nur Bridge-Python, `config.json` oder `knowledge-packets` geaendert: `villagerai-chief`
-- Beides geaendert: erst `villagerai-chief`, dann `crafty`
-
-## Provider-Hinweis
-
-- Das Plugin kennt nur `dummy` oder `http`.
-- Modellwechsel wie Ollama oder DeepSeek passieren ausschliesslich im Bridge-Dienst ueber `chief-ai-service/config.json`.
-- Secrets wie `DEEPSEEK_API_KEY` gehoeren als Umgebungsvariable in den Bridge-Prozess, nicht in die Plugin-YAML.
-
-## Wichtige Konfigurationsdateien
-
-Plugin-Seite:
-
-- `src/main/resources/config.yml`: technische Runtime-Werte fuer Timeouts, Queue, AI-Provider-Bridge, Interaktion und Heuristiken
-- `src/main/resources/chief-profiles.yml`: Rollen, Persoenlichkeiten, Begruessungen und Chief-Defaults
-- `src/main/resources/quest-offers.yml`: Questvorlagen pro Beruf
-- `src/main/resources/quest-rewards.yml`: Reward-Definitionen pro Questtyp
-
-Bridge-Seite:
-
-- `chief-ai-service/config.json`: Provider-Umschaltung, Modellname, Timeouts, API-Key-Quelle
-- `chief-ai-service/knowledge-packets/*.json`: kuratierte Minecraft-Wissenspakete
-- `chief-ai-service/systemd/villagerai-chief.service`: Beispiel fuer den Linux-Dienst
-
-Faustregel:
-
-- Wenn du Dialogstil, Provider oder Wissenspakete aenderst, schaue zuerst auf die Bridge-Seite.
-- Wenn du Questlogik, Villager-Verhalten oder Bukkit-Kontext aenderst, schaue zuerst auf die Plugin-Seite.
-
-## Sichere naechste Ausbaupunkte
-
-- Quest-Vergabe auf Basis des vorhandenen `QuestService` an echte Dialoge koppeln.
-- Quest-Vergabe und Quest-Fortschritt ueber Minecraft-Events verbinden.
-- Conversation-History spaeter begrenzt in den AI-Request einspeisen.
-- Reputation getrennt von Quest- und History-Daten aufbauen.
-
-## Validierungskommandos
-
-Windows lokal:
-
-```powershell
-.\gradlew.bat build
-Set-Location .\chief-ai-service
-python -m compileall .
-```
-
-Ubuntu Bridge:
-
-```bash
-curl http://127.0.0.1:8080/health
-curl -X POST http://127.0.0.1:8080/v1/chief/reply \
-  -H 'Content-Type: application/json' \
-  -d '{"chiefId":"chief-1234abcd","villageId":"world:12:8","chiefName":"Aldor","playerUuid":"00000000-0000-0000-0000-000000000000","playerMessage":"Hallo"}'
-```
+- Datei: `chief-ai-service/tests/test_integration_facts.py`
+- 13 Tests, alle grün (Stand 2026-06-13):
+  - `ScenarioA`: Name persistiert über 40+ Ablenkungs-Turns
+  - `ScenarioB`: Ohne Fakten → leere Ausgabe
+  - `ScenarioC`: Namens-Korrektur gewinnt
+  - `ScenarioD`: Chief-übergreifende "any"-Fakten
+  - `FactsTimeSuffixTest`, `FactsLimitTest`, `FactsPersistenceTest`
+  - `HybridSearchTypeFilteringTest` (4 Subtests)
+  - `RelevanceCacheTest` (2 Subtests)
+  - Alle 13 Tests laufen ohne Ollama (Fake-Embeddings)"

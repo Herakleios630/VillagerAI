@@ -1,23 +1,33 @@
 package de.ajsch.villagerai.command;
 
 import de.ajsch.villagerai.VillageChiefPlugin;
-import de.ajsch.villagerai.model.Chief;
+import de.ajsch.villagerai.model.Speaker;
 import de.ajsch.villagerai.model.Quest;
 import de.ajsch.villagerai.model.SpeakerReputation;
 import de.ajsch.villagerai.model.VillagerContext;
 import de.ajsch.villagerai.model.VillageReputation;
 import de.ajsch.villagerai.service.ChiefService;
+import de.ajsch.villagerai.service.SpeakerService;
 import de.ajsch.villagerai.service.ConversationService;
+import de.ajsch.villagerai.service.MourningService;
 import de.ajsch.villagerai.service.QuestDifficultyService;
+import de.ajsch.villagerai.service.QuestOfferService;
 import de.ajsch.villagerai.service.QuestService;
 import de.ajsch.villagerai.service.QuestUiService;
 import de.ajsch.villagerai.service.ReputationService;
 import de.ajsch.villagerai.service.VillageIdentityService;
 import de.ajsch.villagerai.service.VillagerContextService;
+import de.ajsch.villagerai.service.VillagePerimeterDisplayService;
 import de.ajsch.villagerai.service.VillagerDebugOverlayService;
 import de.ajsch.villagerai.util.EntityTargetingUtil;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Material;
@@ -37,42 +47,54 @@ public final class ChiefCommand implements TabExecutor {
 
     private final VillageChiefPlugin plugin;
     private final ChiefService chiefService;
+    private final SpeakerService speakerService;
     private final ConversationService conversationService;
+    private final QuestOfferService questOfferService;
     private final QuestService questService;
     private final QuestDifficultyService questDifficultyService;
     private final QuestUiService questUiService;
     private final ReputationService reputationService;
+    private final MourningService mourningService;
     private final VillageIdentityService villageIdentityService;
     private final VillagerContextService villagerContextService;
+    private final VillagePerimeterDisplayService villagePerimeterDisplayService;
     private final VillagerDebugOverlayService villagerDebugOverlayService;
 
     public ChiefCommand(
             VillageChiefPlugin plugin,
             ChiefService chiefService,
+            SpeakerService speakerService,
             ConversationService conversationService,
             QuestService questService,
+            QuestOfferService questOfferService,
             QuestDifficultyService questDifficultyService,
             QuestUiService questUiService,
             ReputationService reputationService,
+            MourningService mourningService,
             VillageIdentityService villageIdentityService,
             VillagerContextService villagerContextService,
+            VillagePerimeterDisplayService villagePerimeterDisplayService,
             VillagerDebugOverlayService villagerDebugOverlayService) {
         this.plugin = plugin;
         this.chiefService = chiefService;
+        this.speakerService = speakerService;
         this.conversationService = conversationService;
         this.questService = questService;
+        this.questOfferService = questOfferService;
         this.questDifficultyService = questDifficultyService;
         this.questUiService = questUiService;
         this.reputationService = reputationService;
+        this.mourningService = mourningService;
         this.villageIdentityService = villageIdentityService;
         this.villagerContextService = villagerContextService;
+        this.villagePerimeterDisplayService = villagePerimeterDisplayService;
         this.villagerDebugOverlayService = villagerDebugOverlayService;
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            sender.sendMessage(Component.text("Verwendung: /chief <set|unset|info|exit|debug|quest|reload>", NamedTextColor.YELLOW));
+            sender.sendMessage(Component.text("Verwendung: /chief <set|unset|info|exit|debug|quest|perimeter|reload|forget>", NamedTextColor.YELLOW));
             return true;
         }
 
@@ -83,7 +105,9 @@ public final class ChiefCommand implements TabExecutor {
             case "exit" -> handleExit(sender);
             case "debug" -> handleDebug(sender, args);
             case "quest" -> handleQuest(sender, args);
+            case "perimeter" -> handlePerimeter(sender);
             case "reload" -> handleReload(sender);
+            case "forget" -> handleForget(sender);
             default -> {
                 sender.sendMessage(Component.text("Unbekannter Subcommand.", NamedTextColor.RED));
                 yield true;
@@ -103,6 +127,41 @@ public final class ChiefCommand implements TabExecutor {
         return true;
     }
 
+    private boolean handleForget(CommandSender sender) {
+        Player player = requirePlayer(sender);
+        if (player == null) {
+            return true;
+        }
+
+        if (!plugin.getConfig().getBoolean("memory.enabled", false)) {
+            player.sendMessage(Component.text("Das Memory-System ist deaktiviert.", NamedTextColor.RED));
+            return true;
+        }
+
+        String bridgeBaseUrl = plugin.getConfig().getString("ai.http.endpoint", "http://127.0.0.1:8080/v1/chief/reply");
+        URI replyUri = URI.create(bridgeBaseUrl);
+        String forgetUrl = replyUri.getScheme() + "://" + replyUri.getHost() + ":" + replyUri.getPort()
+                + "/v1/chief/forget?player_uuid=" + player.getUniqueId().toString();
+
+        HttpClient client = HttpClient.newHttpClient();
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(forgetUrl))
+                    .timeout(Duration.ofSeconds(10))
+                    .DELETE()
+                    .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                player.sendMessage(Component.text("Deine Gespraechshistorie wurde geloescht.", NamedTextColor.GREEN));
+            } else {
+                player.sendMessage(Component.text("Die Bridge hat mit Status " + response.statusCode() + " geantwortet.", NamedTextColor.YELLOW));
+            }
+        } catch (Exception exception) {
+            player.sendMessage(Component.text("Die Bridge ist nicht erreichbar. Historie konnte nicht geloescht werden.", NamedTextColor.RED));
+            plugin.getLogger().warning("[ChiefCommand] /chief forget failed: " + exception.getMessage());
+        }
+        return true;
+    }
+
     private boolean handleSet(CommandSender sender, String[] args) {
         Player player = requirePlayer(sender);
         if (player == null) {
@@ -115,15 +174,30 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
+        // villageId vorab ermitteln, um Trauer-Prüfung VOR markChief zu ermöglichen
         String villageId = args.length >= 2 ? args[1] : null;
-        Chief chief = villageId == null || villageId.isBlank()
-                ? chiefService.markChief(villager)
-                : chiefService.markChief(villager, villageId);
+        if (villageId == null || villageId.isBlank()) {
+            try {
+                villageId = villageIdentityService.resolve(villager).villageId();
+            } catch (Exception e) {
+                villageId = "unknown";
+            }
+        }
+
+        // Edge Case: Trauer vorzeitig beenden, wenn Admin /chief set während Trauerphase
+        if (mourningService.isVillageInMourning(villageId)) {
+            mourningService.cancelMourning(villageId);
+            sender.sendMessage(Component.text("Trauerphase für Dorf " + villageId + " vorzeitig beendet (Admin-Override).", NamedTextColor.YELLOW));
+        }
+
+                        Speaker speaker = (args.length >= 2 && !args[1].isBlank())
+                ? chiefService.markChief(villager, args[1])
+                : chiefService.markChief(villager);
 
         sender.sendMessage(Component.text("Chief gesetzt: ", NamedTextColor.GREEN)
-                .append(Component.text(chief.chiefId(), NamedTextColor.WHITE))
+                .append(Component.text(speaker.speakerId(), NamedTextColor.WHITE))
                 .append(Component.text(" in Dorf ", NamedTextColor.GREEN))
-                .append(Component.text(chief.villageId(), NamedTextColor.WHITE)));
+                .append(Component.text(speaker.villageId(), NamedTextColor.WHITE)));
         return true;
     }
 
@@ -144,6 +218,16 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
+        // Trauerphase starten
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
+        if (speaker != null) {
+            try {
+                mourningService.beginMourning(speaker.villageId(), speaker.speakerId());
+            } catch (RuntimeException e) {
+                plugin.getLogger().warning("[ChiefCommand] Mourning-Partikel konnten nicht gestartet werden: " + e.getMessage());
+            }
+        }
+
         sender.sendMessage(Component.text("Chief-Markierung entfernt.", NamedTextColor.GREEN));
         return true;
     }
@@ -154,31 +238,71 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
+        // 1) Target-Pfad: Spieler schaut ein Villager an
         Villager villager = EntityTargetingUtil.findTargetedVillager(player, plugin.getTargetRangeBlocks());
-        if (villager == null) {
-            sender.sendMessage(Component.text("Du musst einen Villager ansehen.", NamedTextColor.RED));
+        if (villager != null) {
+            Optional<Speaker> optionalSpeaker = speakerService.getSpeaker(villager);
+            if (optionalSpeaker.isEmpty()) {
+                sender.sendMessage(Component.text("Dieser Villager ist kein Chief.", NamedTextColor.RED));
+                return true;
+            }
+
+            Speaker speaker = optionalSpeaker.get();
+            sender.sendMessage(Component.text("Chief-Info", NamedTextColor.GOLD));
+            sender.sendMessage(Component.text("Chief-ID: " + speaker.speakerId(), NamedTextColor.WHITE));
+            sender.sendMessage(Component.text("Village-ID: " + speaker.villageId(), NamedTextColor.WHITE));
+            sender.sendMessage(Component.text("Village-Name: " + speaker.villageName(), NamedTextColor.WHITE));
+            sender.sendMessage(Component.text("Name: " + speaker.displayName(), NamedTextColor.WHITE));
+            sender.sendMessage(Component.text("Rolle: " + speaker.role(), NamedTextColor.WHITE));
+            sender.sendMessage(Component.text("Persoenlichkeit: " + speaker.personality(), NamedTextColor.WHITE));
+            sender.sendMessage(Component.text("Begruessung: " + speaker.greeting(), NamedTextColor.WHITE));
+            sender.sendMessage(Component.text("Entity-UUID: " + speaker.entityUuid(), NamedTextColor.WHITE));
+            sender.sendMessage(Component.text(
+                    "Position: " + speaker.world() + " " + (int) speaker.x() + ", " + (int) speaker.y() + ", " + (int) speaker.z(),
+                    NamedTextColor.WHITE));
             return true;
         }
 
-        if (chiefService.getChief(villager).isEmpty()) {
-            sender.sendMessage(Component.text("Dieser Villager ist kein Chief.", NamedTextColor.RED));
+        // 2) Spieler-Pfad: kein Target → aktuelle villageId des Spielers ermitteln
+        Optional<String> villageId = villageIdentityService.resolveVillageIdFromPlayer(player);
+        if (villageId.isEmpty()) {
+            sender.sendMessage(Component.text("Du befindest dich in keinem Dorf.", NamedTextColor.RED));
             return true;
         }
 
-        Chief chief = chiefService.getChief(villager).orElseThrow();
-        sender.sendMessage(Component.text("Chief-Info", NamedTextColor.GOLD));
-        sender.sendMessage(Component.text("Chief-ID: " + chief.chiefId(), NamedTextColor.WHITE));
-        sender.sendMessage(Component.text("Village-ID: " + chief.villageId(), NamedTextColor.WHITE));
-        sender.sendMessage(Component.text("Village-Name: " + chief.villageName(), NamedTextColor.WHITE));
-        sender.sendMessage(Component.text("Name: " + chief.displayName(), NamedTextColor.WHITE));
-        sender.sendMessage(Component.text("Rolle: " + chief.role(), NamedTextColor.WHITE));
-        sender.sendMessage(Component.text("Persoenlichkeit: " + chief.personality(), NamedTextColor.WHITE));
-        sender.sendMessage(Component.text("Begruessung: " + chief.greeting(), NamedTextColor.WHITE));
-        sender.sendMessage(Component.text("Entity-UUID: " + chief.entityUuid(), NamedTextColor.WHITE));
+        Optional<Speaker> optionalSpeaker = speakerService.findActiveChiefByVillageId(villageId.get());
+        if (optionalSpeaker.isEmpty()) {
+            sender.sendMessage(Component.text("Dieses Dorf hat derzeit keinen Haeuptling.", NamedTextColor.YELLOW));
+            return true;
+        }
+
+        Speaker speaker = optionalSpeaker.get();
+        sender.sendMessage(Component.text("Haeuptling deines Dorfes", NamedTextColor.GOLD));
+        sender.sendMessage(Component.text("Name: " + speaker.displayName(), NamedTextColor.WHITE));
+        sender.sendMessage(Component.text("Dorf: " + speaker.villageName() + " (" + speaker.villageId() + ")", NamedTextColor.WHITE));
+        sender.sendMessage(Component.text("Rolle: " + speaker.role(), NamedTextColor.WHITE));
+        sender.sendMessage(Component.text("Persoenlichkeit: " + speaker.personality(), NamedTextColor.WHITE));
         sender.sendMessage(Component.text(
-                "Position: " + chief.world() + " " + (int) chief.x() + ", " + (int) chief.y() + ", " + (int) chief.z(),
+                "Position: " + speaker.world() + " " + (int) speaker.x() + ", " + (int) speaker.y() + ", " + (int) speaker.z(),
                 NamedTextColor.WHITE));
+        sender.sendMessage(Component.text("Gekroent seit: " + formatTimeAgo(0L /* TODO: get from chiefRepository */), NamedTextColor.WHITE));
         return true;
+    }
+
+    /** Formatiert einen Unix-Timestamp als menschenlesbare „vor X Tagen"-Angabe. */
+    private static String formatTimeAgo(long crownedAt) {
+        if (crownedAt <= 0L) {
+            return "unbekannt";
+        }
+        long diffMs = System.currentTimeMillis() - crownedAt;
+        long days = diffMs / (1000L * 60L * 60L * 24L);
+        if (days <= 0) {
+            return "heute";
+        }
+        if (days == 1) {
+            return "vor 1 Tag";
+        }
+        return "vor " + days + " Tagen";
     }
 
     private boolean handleExit(CommandSender sender) {
@@ -201,6 +325,9 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
+        if (args.length >= 2 && "chat".equalsIgnoreCase(args[1])) {
+            return handleDebugChat(player, args);
+        }
         if (args.length >= 2 && "watch".equalsIgnoreCase(args[1])) {
             return handleDebugWatch(player);
         }
@@ -214,25 +341,25 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        var chief = chiefService.getChief(villager);
-        var villageIdentity = chief.<de.ajsch.villagerai.model.VillageIdentity>map(foundChief ->
+        var optionalSpeaker = speakerService.getSpeaker(villager);
+        var villageIdentity = optionalSpeaker.<de.ajsch.villagerai.model.VillageIdentity>map(foundSpeaker ->
             new de.ajsch.villagerai.model.VillageIdentity(
-                    foundChief.villageId(),
-                    foundChief.villageName(),
-                    foundChief.villageDescription(),
-                    foundChief.villageAttributes(),
-                    foundChief.villageBiome(),
-                    foundChief.villagePopulationEstimate(),
-                    foundChief.villageEventSummary()))
+                    foundSpeaker.villageId(),
+                    foundSpeaker.villageName(),
+                    villageIdentityService.resolve(villager).villageDescription(),
+                    villageIdentityService.resolve(villager).villageAttributes(),
+                    villageIdentityService.resolve(villager).villageBiome(),
+                    villageIdentityService.resolve(villager).villagePopulationEstimate(),
+                    villageIdentityService.resolve(villager).villageEventSummary()))
             .orElseGet(() -> villageIdentityService.resolve(villager));
         VillagerContext villagerContext = villagerContextService.resolve(villager, player.getUniqueId());
         Quest activeQuest = questService.findActiveQuest(player.getUniqueId()).orElse(null);
         boolean questMatchesTarget = activeQuest != null
             && (activeQuest.villageId().equals(villageIdentity.villageId())
-            || chief.map(foundChief -> foundChief.chiefId().equals(activeQuest.chiefId())).orElse(false));
+            || optionalSpeaker.map(foundSpeaker -> foundSpeaker.speakerId().equals(activeQuest.speakerId())).orElse(false));
 
         sender.sendMessage(Component.text("Debug fuer Villager " + villager.getUniqueId(), NamedTextColor.GOLD));
-        sender.sendMessage(Component.text("Chief aktiv: " + chiefService.isChief(villager), NamedTextColor.WHITE));
+        sender.sendMessage(Component.text("Chief aktiv: " + speakerService.getSpeaker(villager).map(Speaker::isChief).orElse(false), NamedTextColor.WHITE));
         sender.sendMessage(Component.text("Beruf: " + villager.getProfession().name(), NamedTextColor.WHITE));
         sender.sendMessage(Component.text("Village-ID: " + villageIdentity.villageId(), NamedTextColor.WHITE));
         sender.sendMessage(Component.text("Village-Name: " + villageIdentity.villageName(), NamedTextColor.WHITE));
@@ -244,11 +371,11 @@ public final class ChiefCommand implements TabExecutor {
         int villageReputationScore = reputationService.getVillageScore(player.getUniqueId(), villageIdentity.villageId());
         int speakerReputationScore = reputationService.getSpeakerScore(
                 player.getUniqueId(),
-                chief.map(Chief::chiefId).orElseGet(() -> chiefService.createConversationProfile(villager).chiefId()));
+                optionalSpeaker.map(Speaker::speakerId).orElseGet(() -> speakerService.createOrRefreshProfile(villager).speakerId()));
         int combinedReputationScore = reputationService.getCombinedScore(
                 player.getUniqueId(),
                 villageIdentity.villageId(),
-                chief.map(Chief::chiefId).orElseGet(() -> chiefService.createConversationProfile(villager).chiefId()));
+                optionalSpeaker.map(Speaker::speakerId).orElseGet(() -> speakerService.createOrRefreshProfile(villager).speakerId()));
         sender.sendMessage(Component.text(
             "Dorfruf: " + villageReputationScore
                 + " (" + reputationService.getVillageSummary(player.getUniqueId(), villageIdentity.villageId()) + ")",
@@ -257,19 +384,19 @@ public final class ChiefCommand implements TabExecutor {
             "Villager-Ruf: " + speakerReputationScore
                 + " (" + reputationService.getSpeakerSummary(
                         player.getUniqueId(),
-                        chief.map(Chief::chiefId).orElseGet(() -> chiefService.createConversationProfile(villager).chiefId())) + ")",
+                        optionalSpeaker.map(Speaker::speakerId).orElseGet(() -> speakerService.createOrRefreshProfile(villager).speakerId())) + ")",
             NamedTextColor.WHITE));
         sender.sendMessage(Component.text(
             "Kombiniert: " + combinedReputationScore
                 + " (" + reputationService.getCombinedSummary(
                         player.getUniqueId(),
                         villageIdentity.villageId(),
-                        chief.map(Chief::chiefId).orElseGet(() -> chiefService.createConversationProfile(villager).chiefId())) + ")",
+                        optionalSpeaker.map(Speaker::speakerId).orElseGet(() -> speakerService.createOrRefreshProfile(villager).speakerId())) + ")",
             NamedTextColor.WHITE));
         int unlockedDifficultyTier = questDifficultyService.resolveUnlockedTier(villageReputationScore);
         int preferredDifficultyTier = questDifficultyService.getPreference(
                 player.getUniqueId(),
-                chief.map(Chief::chiefId).orElseGet(() -> chiefService.createConversationProfile(villager).chiefId()))
+                optionalSpeaker.map(Speaker::speakerId).orElseGet(() -> speakerService.createOrRefreshProfile(villager).speakerId()))
             .preferredDifficultyTier();
         sender.sendMessage(Component.text(
             "Quest-Schwierigkeit: bevorzugt " + questDifficultyService.describeTier(preferredDifficultyTier)
@@ -278,7 +405,7 @@ public final class ChiefCommand implements TabExecutor {
         sender.sendMessage(Component.text(
             "Legendary-Status: " + conversationService.describeLegendaryBlocker(
                 player,
-                chief.map(Chief::chiefId).orElseGet(() -> chiefService.createConversationProfile(villager).chiefId()),
+                optionalSpeaker.map(Speaker::speakerId).orElseGet(() -> speakerService.createOrRefreshProfile(villager).speakerId()),
                 villageReputationScore,
                 speakerReputationScore),
             NamedTextColor.WHITE));
@@ -316,7 +443,7 @@ public final class ChiefCommand implements TabExecutor {
         }
         conversationService.getConversation(player.getUniqueId()).ifPresentOrElse(snapshot -> {
             sender.sendMessage(Component.text("Aktives Gespraech: ja", NamedTextColor.WHITE));
-            sender.sendMessage(Component.text("Chief-ID: " + snapshot.chiefId(), NamedTextColor.WHITE));
+            sender.sendMessage(Component.text("Chief-ID: " + snapshot.speakerId(), NamedTextColor.WHITE));
             sender.sendMessage(Component.text("Village-ID: " + snapshot.villageId(), NamedTextColor.WHITE));
             sender.sendMessage(Component.text("Idle-Sekunden: " + snapshot.idleSeconds(), NamedTextColor.WHITE));
         }, () -> sender.sendMessage(Component.text("Aktives Gespraech: nein", NamedTextColor.WHITE)));
@@ -354,7 +481,7 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief speaker = chiefService.getConversationSpeaker(villager);
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
         String scope = args[2].toLowerCase(Locale.ROOT);
         return switch (scope) {
             case "village" -> handleDebugSetVillage(player, villager, speaker, score);
@@ -366,7 +493,7 @@ public final class ChiefCommand implements TabExecutor {
         };
     }
 
-    private boolean handleDebugSetVillage(Player player, Villager villager, Chief speaker, int score) {
+    private boolean handleDebugSetVillage(Player player, Villager villager, Speaker speaker, int score) {
         var villageIdentity = villageIdentityService.resolve(villager);
         VillageReputation updated = reputationService.setVillageReputation(
                 player.getUniqueId(),
@@ -376,7 +503,7 @@ public final class ChiefCommand implements TabExecutor {
         int combinedScore = reputationService.getCombinedScore(
                 player.getUniqueId(),
                 villageIdentity.villageId(),
-                speaker.chiefId());
+                speaker.speakerId());
         player.sendMessage(Component.text(
                 "Dorfruf fuer " + villageIdentity.villageName() + " auf " + updated.score()
                         + " gesetzt (" + reputationService.getVillageSummary(player.getUniqueId(), villageIdentity.villageId()) + ").",
@@ -386,21 +513,50 @@ public final class ChiefCommand implements TabExecutor {
                         + " (" + reputationService.getCombinedSummary(
                                 player.getUniqueId(),
                                 villageIdentity.villageId(),
-                                speaker.chiefId()) + ")",
+                                speaker.speakerId()) + ")",
                 NamedTextColor.WHITE));
         return true;
     }
 
-    private boolean handleDebugSetVillager(Player player, Chief speaker, int score) {
+    private boolean handleDebugSetVillager(Player player, Speaker speaker, int score) {
         SpeakerReputation updated = reputationService.setSpeakerReputation(
                 player.getUniqueId(),
-                speaker.chiefId(),
+                speaker.villageId(),
+                speaker.speakerId(),
                 score,
                 "debug:set:villager");
         player.sendMessage(Component.text(
-                "Villager-Ruf fuer " + speaker.chatName() + " auf " + updated.score()
-                        + " gesetzt (" + reputationService.getSpeakerSummary(player.getUniqueId(), speaker.chiefId()) + ").",
+                "Villager-Ruf fuer " + speaker.displayName() + " auf " + updated.score()
+                        + " gesetzt (" + reputationService.getSpeakerSummary(player.getUniqueId(), speaker.speakerId()) + ").",
                 NamedTextColor.GREEN));
+        return true;
+    }
+
+    private boolean handleDebugChat(Player player, String[] args) {
+        if (!player.hasPermission("villagerai.debugchat")) {
+            player.sendMessage(Component.text("Du hast keine Berechtigung fuer diesen Befehl.", NamedTextColor.RED));
+            return true;
+        }
+
+        if (args.length < 3) {
+            player.sendMessage(Component.text(
+                    "Verwendung: /chief debug chat <off|normal|verbose>", NamedTextColor.YELLOW));
+            return true;
+        }
+
+        String levelArg = args[2].toLowerCase(Locale.ROOT);
+        VillageChiefPlugin.ChatDebugLevel newLevel = VillageChiefPlugin.ChatDebugLevel.fromConfigKey(levelArg);
+
+        // Pruefen, dass der Wert nicht OFF ist, wenn "off" eingegeben wurde – fromConfigKey liefert OFF als default
+        if (!levelArg.equals("off") && !levelArg.equals("normal") && !levelArg.equals("verbose")) {
+            player.sendMessage(Component.text(
+                    "Unbekannter Chat-Debug-Level. Nutze off, normal oder verbose.", NamedTextColor.RED));
+            return true;
+        }
+
+        plugin.setChatDebugLevel(newLevel);
+        player.sendMessage(Component.text(
+                "Chat-Debug-Level auf " + levelArg + " gesetzt (fluechtig, bis zum naechsten Reload/Neustart).", NamedTextColor.GREEN));
         return true;
     }
 
@@ -456,11 +612,11 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
 
         QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(
                 player.getUniqueId(),
-                chief.chiefId());
+                speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
             return true;
@@ -468,9 +624,9 @@ public final class ChiefCommand implements TabExecutor {
 
         Quest quest = questService.activateTalkQuest(
                 player.getUniqueId(),
-                chief,
-                "Sprich mit " + chief.chatName(),
-                "Melde dich bei " + chief.chatName() + " aus " + chief.villageName() + ".");
+                                speaker,
+                "Sprich mit " + speaker.displayName(),
+                "Melde dich bei " + speaker.displayName() + " aus " + speaker.villageName() + ".");
         questUiService.refresh(player);
         player.sendMessage(Component.text("Talk-Quest aktiviert: " + quest.title(), NamedTextColor.GREEN));
         return true;
@@ -504,11 +660,11 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
 
         QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(
                 player.getUniqueId(),
-                chief.chiefId());
+                speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
             return true;
@@ -533,7 +689,7 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Quest quest = questService.activateDeliverQuest(player.getUniqueId(), chief, material, amount);
+        Quest quest = questService.activateDeliverQuest(player.getUniqueId(), speaker, material, amount);
         questUiService.refresh(player);
         player.sendMessage(Component.text("Liefer-Quest aktiviert: " + quest.title(), NamedTextColor.GREEN));
         return true;
@@ -551,11 +707,11 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
 
         QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(
                 player.getUniqueId(),
-                chief.chiefId());
+                speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
             return true;
@@ -580,7 +736,7 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Quest quest = questService.activateFetchQuest(player, chief, material, amount);
+        Quest quest = questService.activateFetchQuest(player, speaker, material, amount);
         questUiService.refresh(player);
         player.sendMessage(Component.text("Sammel-Quest aktiviert: " + quest.title(), NamedTextColor.GREEN));
         return true;
@@ -598,11 +754,11 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
 
         QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(
                 player.getUniqueId(),
-                chief.chiefId());
+                speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
             return true;
@@ -629,7 +785,7 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Quest quest = questService.activateBrewQuest(player.getUniqueId(), chief, potionType, amount);
+        Quest quest = questService.activateBrewQuest(player.getUniqueId(), speaker, potionType, amount);
         questUiService.refresh(player);
         player.sendMessage(Component.text("Brau-Quest aktiviert: " + quest.title(), NamedTextColor.GREEN));
         return true;
@@ -647,8 +803,8 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
-        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), chief.chiefId());
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
+        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
             return true;
@@ -672,7 +828,7 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Quest quest = questService.activateRepairQuest(player.getUniqueId(), chief, material, amount);
+        Quest quest = questService.activateRepairQuest(player.getUniqueId(), speaker, material, amount);
         questUiService.refresh(player);
         player.sendMessage(Component.text("Reparatur-Quest aktiviert: " + quest.title(), NamedTextColor.GREEN));
         return true;
@@ -690,8 +846,8 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
-        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), chief.chiefId());
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
+        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
             return true;
@@ -715,7 +871,7 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Quest quest = questService.activateBuildQuest(player.getUniqueId(), chief, material, amount);
+        Quest quest = questService.activateBuildQuest(player.getUniqueId(), speaker, material, amount);
         questUiService.refresh(player);
         player.sendMessage(Component.text("Bau-Quest aktiviert: " + quest.title(), NamedTextColor.GREEN));
         return true;
@@ -733,8 +889,8 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
-        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), chief.chiefId());
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
+        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
             return true;
@@ -764,7 +920,7 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Quest quest = questService.activateBreedQuest(player.getUniqueId(), chief, entityType, amount);
+        Quest quest = questService.activateBreedQuest(player.getUniqueId(), speaker, entityType, amount);
         questUiService.refresh(player);
         player.sendMessage(Component.text("Zucht-Quest aktiviert: " + quest.title(), NamedTextColor.GREEN));
         return true;
@@ -777,14 +933,14 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
-        int villageReputationScore = reputationService.getVillageScore(player.getUniqueId(), chief.villageId());
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
+        int villageReputationScore = reputationService.getVillageScore(player.getUniqueId(), speaker.villageId());
         int unlockedTier = questDifficultyService.resolveUnlockedTier(villageReputationScore);
 
         if (args.length < 3) {
-            int currentTier = questDifficultyService.getPreference(player.getUniqueId(), chief.chiefId()).preferredDifficultyTier();
+            int currentTier = questDifficultyService.getPreference(player.getUniqueId(), speaker.speakerId()).preferredDifficultyTier();
             player.sendMessage(Component.text(
-                    "Quest-Schwierigkeit fuer " + chief.chatName() + ": bevorzugt "
+                    "Quest-Schwierigkeit fuer " + speaker.displayName() + ": bevorzugt "
                             + questDifficultyService.describeTier(currentTier)
                             + ", freigeschaltet " + questDifficultyService.describeTier(unlockedTier) + ".",
                     NamedTextColor.WHITE));
@@ -800,10 +956,10 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        int clampedTier = questDifficultyService.setPreferredDifficultyTier(player.getUniqueId(), chief.chiefId(), preferredTier)
+        int clampedTier = questDifficultyService.setPreferredDifficultyTier(player.getUniqueId(), speaker.speakerId(), preferredTier)
                 .preferredDifficultyTier();
         player.sendMessage(Component.text(
-                "Quest-Schwierigkeit fuer " + chief.chatName() + " auf "
+                "Quest-Schwierigkeit fuer " + speaker.displayName() + " auf "
                         + questDifficultyService.describeTier(clampedTier)
                         + " gesetzt. Aktuell freigeschaltet: " + questDifficultyService.describeTier(unlockedTier) + ".",
                 NamedTextColor.GREEN));
@@ -850,11 +1006,11 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
 
         QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(
                 player.getUniqueId(),
-                chief.chiefId());
+                speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
             return true;
@@ -886,15 +1042,15 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Quest quest = questService.activateKillQuest(player.getUniqueId(), chief, entityType, amount);
+        Quest quest = questService.activateKillQuest(player.getUniqueId(), speaker, entityType, amount);
         questUiService.refresh(player);
         player.sendMessage(Component.text("Jagd-Quest aktiviert: " + quest.title(), NamedTextColor.GREEN));
         return true;
     }
 
     private boolean handleQuestSecure(Player player, String[] args) {
-        if (args.length < 4) {
-            player.sendMessage(Component.text("Verwendung: /chief quest secure <material> <anzahl> [radius]", NamedTextColor.YELLOW));
+        if (args.length < 2) {
+            player.sendMessage(Component.text("Verwendung: /chief quest secure <material> <anzahl> [radius]   oder   /chief quest secure village-light [material] [difficulty-tier]", NamedTextColor.YELLOW));
             return true;
         }
 
@@ -904,10 +1060,64 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
-        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), chief.chiefId());
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
+        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
+            return true;
+        }
+
+        // ---- village-light shortcut ----
+        if (args.length >= 2 && "village-light".equalsIgnoreCase(args[2])) {
+            Material themeMaterial = Material.TORCH;
+            if (args.length >= 4) {
+                themeMaterial = Material.matchMaterial(args[3]);
+                if (themeMaterial == null || themeMaterial.isAir()) {
+                    themeMaterial = Material.TORCH;
+                }
+            }
+            int difficultyTier = 0;
+            if (args.length >= 5) {
+                try {
+                    difficultyTier = Integer.parseInt(args[4]);
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            QuestOfferService.QuestOffer offer = questOfferService.villageLightSecureOffer(
+                                speaker, themeMaterial, "Du hast nach einer Aufgabe gefragt.", difficultyTier);
+            if (offer == null) {
+                player.sendMessage(Component.text(
+                        "Kein gueltiger Sub-Bereich gefunden – das Dorf ist vermutlich bereits hell.",
+                        NamedTextColor.RED));
+                return true;
+            }
+            Quest quest = questOfferService.acceptOffer(player, speaker, offer);
+            questUiService.refresh(player);
+            player.sendMessage(Component.text("Village-light-Quest aktiviert: " + quest.title(), NamedTextColor.GREEN));
+            if (questService.isVillageLightSecureQuest(quest)) {
+                String[] parts = quest.targetKey().split("\\|");
+                if (parts.length >= 9) {
+                    try {
+                        int initialDark = Integer.parseInt(parts[5]);
+                        int cx = Integer.parseInt(parts[6]);
+                        int cz = Integer.parseInt(parts[8]);
+                        int cy = Integer.parseInt(parts[7]);
+                        int distance = (int) Math.round(player.getLocation().distance(
+                                new org.bukkit.Location(player.getWorld(), cx + 0.5D, cy + 0.5D, cz + 0.5D)));
+                        player.sendMessage(Component.text(
+                                initialDark + " dunkle Stellen im Zielbereich (~" + distance + "m entfernt). "
+                                        + "Setze beliebige Lichtquellen – die Bossbar zeigt deinen Fortschritt.",
+                                NamedTextColor.GRAY));
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+            return true;
+        }
+
+        // ---- block-count (original) ----
+        if (args.length < 4) {
+            player.sendMessage(Component.text("Verwendung: /chief quest secure <material> <anzahl> [radius]", NamedTextColor.YELLOW));
             return true;
         }
 
@@ -943,15 +1153,15 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        int baseX = (int) Math.round(chief.x());
-        int baseZ = (int) Math.round(chief.z());
+        int baseX = (int) Math.round(speaker.x());
+        int baseZ = (int) Math.round(speaker.z());
         int targetX = baseX + 30;
         int targetZ = baseZ - 30;
         Location location = player.getLocation();
 
         Quest quest = questService.activateSecureQuest(
-                player.getUniqueId(),
-                chief,
+                        player.getUniqueId(),
+                        speaker,
                 material,
                 amount,
                 location.getWorld().getName(),
@@ -975,8 +1185,8 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
-        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), chief.chiefId());
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
+        QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(player.getUniqueId(), speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
             return true;
@@ -1002,8 +1212,8 @@ public final class ChiefCommand implements TabExecutor {
 
         Location location = player.getLocation();
         Quest quest = questService.activateExploreQuest(
-                player.getUniqueId(),
-                chief,
+                        player.getUniqueId(),
+                        speaker,
                 location.getWorld().getName(),
                 targetX,
                 targetZ,
@@ -1027,11 +1237,11 @@ public final class ChiefCommand implements TabExecutor {
             return true;
         }
 
-        Chief chief = chiefService.getConversationSpeaker(villager);
+        Speaker speaker = speakerService.getSpeaker(villager).orElse(null);
 
         QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(
                 player.getUniqueId(),
-                chief.chiefId());
+                speaker.speakerId());
         if (!availability.allowed()) {
             player.sendMessage(Component.text(availability.failureMessage(), NamedTextColor.RED));
             return true;
@@ -1068,8 +1278,8 @@ public final class ChiefCommand implements TabExecutor {
 
         Location location = player.getLocation();
         Quest quest = questService.activateVisitQuest(
-                player.getUniqueId(),
-                chief,
+                        player.getUniqueId(),
+                        speaker,
                 location.getWorld().getName(),
                 targetX,
                 targetZ,
@@ -1078,6 +1288,25 @@ public final class ChiefCommand implements TabExecutor {
         player.sendMessage(Component.text(
                 "Reise-Quest aktiviert: " + quest.title() + " (Radius " + radius + ")",
                 NamedTextColor.GREEN));
+        return true;
+    }
+
+    private boolean handlePerimeter(CommandSender sender) {
+        Player player = requirePlayer(sender);
+        if (player == null) {
+            return true;
+        }
+
+        Villager villager = EntityTargetingUtil.findTargetedVillager(player, plugin.getTargetRangeBlocks());
+        if (villager == null) {
+            player.sendMessage(Component.text("Du musst einen Villager ansehen.", NamedTextColor.RED));
+            return true;
+        }
+
+        boolean active = villagePerimeterDisplayService.toggle(player, villager);
+        player.sendMessage(Component.text(
+                "Perimeter-Anzeige " + (active ? "aktiviert" : "deaktiviert") + ".",
+                active ? NamedTextColor.GREEN : NamedTextColor.GRAY));
         return true;
     }
 
@@ -1093,10 +1322,13 @@ public final class ChiefCommand implements TabExecutor {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return List.of("set", "unset", "info", "exit", "debug", "quest", "reload");
+            return List.of("set", "unset", "info", "exit", "debug", "quest", "perimeter", "reload", "forget");
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("debug")) {
-            return List.of("watch", "set");
+            return List.of("chat", "watch", "set");
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("debug") && args[1].equalsIgnoreCase("chat")) {
+            return List.of("off", "normal", "verbose");
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("debug") && args[1].equalsIgnoreCase("set")) {
             return List.of("village", "villager");

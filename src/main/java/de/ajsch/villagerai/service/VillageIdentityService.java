@@ -1,30 +1,208 @@
 package de.ajsch.villagerai.service;
 
+import de.ajsch.villagerai.model.Anchor;
 import de.ajsch.villagerai.model.VillageIdentity;
+import de.ajsch.villagerai.model.VillageRecord;
+import de.ajsch.villagerai.storage.ChiefRepository;
+import de.ajsch.villagerai.storage.VillageRepository;
+import de.ajsch.villagerai.util.Keys;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.logging.Logger;
 import org.bukkit.Location;
 import org.bukkit.block.Biome;
 import org.bukkit.entity.Villager;
+import org.bukkit.entity.Player;
 import org.bukkit.entity.memory.MemoryKey;
+import org.bukkit.persistence.PersistentDataType;
 
 public final class VillageIdentityService {
 
-    public VillageIdentity resolve(Villager villager) {
-        Location anchor = resolveAnchor(villager);
-        String villageName = buildVillageName(anchor);
-        return new VillageIdentity(
-                buildVillageId(anchor),
-                villageName,
-                buildVillageDescription(anchor, villageName),
-            buildVillageAttributes(villager, anchor),
-            formatBiome(anchor.getBlock().getBiome()),
-            estimateVillagePopulation(villager, anchor),
-            buildVillageEventSummary(villager, anchor));
+    public static final double VILLAGE_RADIUS = 64.0D;
+
+    private final Keys keys;
+    private volatile VillageRepository villageRepository;
+    private volatile ChiefRepository chiefRepository;
+    private volatile Logger logger;
+    private volatile MourningService mourningService;
+
+    public VillageIdentityService(Keys keys) {
+        this.keys = keys;
     }
 
-    private Location resolveAnchor(Villager villager) {
+    public void setVillageRepository(VillageRepository villageRepository) {
+        this.villageRepository = villageRepository;
+    }
+
+    public void setChiefRepository(ChiefRepository chiefRepository) {
+        this.chiefRepository = chiefRepository;
+    }
+
+    public void setLogger(Logger logger) {
+        this.logger = logger;
+    }
+
+    public void setMourningService(MourningService mourningService) {
+        this.mourningService = mourningService;
+    }
+
+    /**
+     * Einmalig beim Plugin-Start aufrufen: Entfernt alle PDC-Schluessel
+     * (village_id, chief_flag, chief_id) von geladenen Villagern, wenn der
+     * zugehoerige Eintrag nicht mehr in villages.yml bzw. chiefs.yml existiert.
+     * Verhindert Zombie-IDs nach Loeschung der Persistenzdateien.
+     */
+    public void purgeAllStalePdc() {
+        int purged = 0;
+        for (org.bukkit.World world : org.bukkit.Bukkit.getWorlds()) {
+            for (org.bukkit.entity.Entity entity : world.getEntities()) {
+                if (!(entity instanceof Villager villager)) {
+                    continue;
+                }
+                org.bukkit.persistence.PersistentDataContainer container = villager.getPersistentDataContainer();
+
+                // village_id pruefen
+                String pdcVillageId = container.get(keys.villageIdKey(), PersistentDataType.STRING);
+                if (pdcVillageId != null && !pdcVillageId.isBlank()) {
+                    if (villageRepository == null
+                            || villageRepository.findByVillageId(pdcVillageId).isEmpty()) {
+                        container.remove(keys.villageIdKey());
+                        purged++;
+                    }
+                }
+
+                // chief_flag + chief_id pruefen
+                Byte pdcChiefFlag = container.get(keys.chiefFlagKey(), PersistentDataType.BYTE);
+                String pdcChiefId = container.get(keys.chiefIdKey(), PersistentDataType.STRING);
+                boolean hasChiefPdc = pdcChiefFlag != null && pdcChiefFlag == (byte) 1
+                        && pdcChiefId != null && !pdcChiefId.isBlank();
+                if (hasChiefPdc) {
+                    if (chiefRepository == null
+                                            || chiefRepository.findAll().stream().noneMatch(a -> a.speakerId().equals(pdcChiefId))) {
+                        container.remove(keys.chiefFlagKey());
+                        container.remove(keys.chiefIdKey());
+                        purged++;
+                    }
+                }
+            }
+        }
+        if (logger != null && purged > 0) {
+            logger.info("[VillageIdentity] PDC-Cleanup: " + purged + " veraltete Schluessel von geladenen Villagern entfernt");
+        }
+    }
+
+    /** Ermittelt eine stabile villageId per PDC, Repository oder Neuregistrierung. */
+    public String resolveOrRegisterVillageId(Villager villager) {
+        // 1. PDC-Check – bereits gespeichert? Nur gueltig wenn Repository
+        //    den Eintrag noch kennt (verhindert Zombie-IDs nach villages.yml-Löschung)
+        String pdcId = villager.getPersistentDataContainer().get(keys.villageIdKey(), PersistentDataType.STRING);
+        if (pdcId != null && !pdcId.isBlank() && villageRepository != null
+                && villageRepository.findByVillageId(pdcId).isPresent()) {
+            return pdcId;
+        }
+        // PDC-Wert existiert, aber nicht mehr im Repository → bereinigen
+        if (pdcId != null && !pdcId.isBlank()) {
+            villager.getPersistentDataContainer().remove(keys.villageIdKey());
+            if (logger != null) {
+                logger.fine("[VillageIdentity] Bereinige veraltete PDC-villageId '" + pdcId
+                        + "' auf Villager " + villager.getUniqueId() + " – nicht mehr in villages.yml vorhanden");
+            }
+        }
+
+        // 2. Besten Anchor ermitteln
+        Location anchor = resolveAnchor(villager);
+        if (anchor == null || anchor.getWorld() == null) {
+            return null;
+        }
+
+        int population = estimateVillagePopulation(villager, anchor);
+
+        // 3. Repository-Suche (nur wenn VillageRepository gesetzt ist)
+        if (villageRepository != null) {
+            VillageRecord record = villageRepository.findByAnchor(anchor, 64).orElse(null);
+            if (record != null) {
+                // Bekanntes Dorf – PDC merken
+                villager.getPersistentDataContainer().set(keys.villageIdKey(), PersistentDataType.STRING, record.villageId());
+                // ggf. neuen Anchor registrieren
+                Anchor newAnchor = buildAnchor(villager, anchor);
+                if (newAnchor != null && !record.knownAnchors().contains(newAnchor)) {
+                    List<Anchor> updated = new ArrayList<>(record.knownAnchors());
+                    updated.add(newAnchor);
+                    villageRepository.save(new VillageRecord(
+                            record.villageId(), record.villageName(), record.registeredAt(), updated));
+                }
+                return record.villageId();
+            }
+        }
+
+        // 4. Neu registrieren, wenn Mindestpopulation erreicht
+        Anchor.AnchorType anchorType = resolveAnchorType(villager);
+        int minVillagers;
+        switch (anchorType) {
+            case MEETING_POINT:
+            case HOME:
+                minVillagers = 1;
+                break;
+            case JOB_SITE:
+            case POTENTIAL_JOB_SITE:
+                minVillagers = 2;
+                break;
+            default:
+                minVillagers = 3;
+                break;
+        }
+        if (population < minVillagers) {
+            return null; // zu wenige Villager für eigenes Dorf
+        }
+
+        String villageId = UUID.randomUUID().toString();
+        String villageName = buildVillageName(anchor);
+        long now = System.currentTimeMillis();
+        Anchor newAnchor = buildAnchor(villager, anchor);
+        if (newAnchor == null) {
+            return null;
+        }
+        VillageRecord newRecord = new VillageRecord(villageId, villageName, now, List.of(newAnchor));
+        villager.getPersistentDataContainer().set(keys.villageIdKey(), PersistentDataType.STRING, villageId);
+        if (villageRepository != null) {
+            villageRepository.save(newRecord);
+        }
+        if (logger != null) {
+            logger.info("[VillageIdentity] Neues Dorf registriert: " + villageId + " '" + villageName + "' bei " + newAnchor.posKey());
+        }
+        return villageId;
+    }
+
+    public VillageIdentity resolve(Villager villager) {
+        Location anchor = resolveAnchor(villager);
+        if (anchor == null || anchor.getWorld() == null) {
+            anchor = villager.getLocation();
+        }
+        String villageId = resolveOrRegisterVillageId(villager);
+        if (villageId == null) {
+            villageId = "unregistered";
+        }
+        String villageName;
+        VillageRecord record = (villageRepository != null) ? villageRepository.findByVillageId(villageId).orElse(null) : null;
+        if (record != null) {
+            villageName = record.villageName();
+        } else {
+            villageName = buildVillageName(anchor);
+        }
+        return new VillageIdentity(
+                villageId,
+                villageName,
+                buildVillageDescription(anchor, villageName),
+                buildVillageAttributes(villager, anchor),
+                formatBiome(anchor.getBlock().getBiome()),
+                estimateVillagePopulation(villager, anchor),
+                buildVillageEventSummary(villager, anchor));
+    }
+
+    public Location resolveAnchor(Villager villager) {
         Location meetingPoint = villager.getMemory(MemoryKey.MEETING_POINT);
         if (hasWorld(meetingPoint)) {
             return meetingPoint;
@@ -48,13 +226,67 @@ public final class VillageIdentityService {
         return villager.getLocation();
     }
 
+    /**
+     * Ermittelt die villageId fuer einen Spieler, indem das naechste geladene
+     * Villager im Umkreis von 64 Bloeken gesucht wird.
+     *
+     * @return die villageId, oder {@code Optional.empty()} falls kein Villager
+     *         in Reichweite ist.
+     */
+    public Optional<String> resolveVillageIdFromPlayer(Player player) {
+        Location playerLocation = player.getLocation();
+        double closestDistanceSq = VILLAGE_RADIUS * VILLAGE_RADIUS;
+        Villager closest = null;
+
+        for (org.bukkit.entity.Entity entity : player.getWorld().getNearbyEntities(playerLocation, VILLAGE_RADIUS, VILLAGE_RADIUS, VILLAGE_RADIUS)) {
+            if (!(entity instanceof Villager villager)) {
+                continue;
+            }
+            double distSq = entity.getLocation().distanceSquared(playerLocation);
+            if (distSq <= closestDistanceSq) {
+                closestDistanceSq = distSq;
+                closest = villager;
+            }
+        }
+
+        if (closest == null) {
+            return Optional.empty();
+        }
+
+        String villageId = resolveOrRegisterVillageId(closest);
+        return (villageId != null) ? Optional.of(villageId) : Optional.empty();
+    }
+
     private boolean hasWorld(Location location) {
         return location != null && location.getWorld() != null;
     }
 
-    private String buildVillageId(Location anchor) {
-        String worldName = anchor.getWorld().getName().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "-");
-        return worldName + ":v:" + anchor.getBlockX() + ":" + anchor.getBlockZ();
+    private Anchor.AnchorType resolveAnchorType(Villager villager) {
+        if (hasWorld(villager.getMemory(MemoryKey.MEETING_POINT))) {
+            return Anchor.AnchorType.MEETING_POINT;
+        }
+        if (hasWorld(villager.getMemory(MemoryKey.HOME))) {
+            return Anchor.AnchorType.HOME;
+        }
+        if (hasWorld(villager.getMemory(MemoryKey.JOB_SITE))) {
+            return Anchor.AnchorType.JOB_SITE;
+        }
+        if (hasWorld(villager.getMemory(MemoryKey.POTENTIAL_JOB_SITE))) {
+            return Anchor.AnchorType.POTENTIAL_JOB_SITE;
+        }
+        return Anchor.AnchorType.VILLAGER_POSITION;
+    }
+
+    private Anchor buildAnchor(Villager villager, Location location) {
+        if (location == null || location.getWorld() == null) {
+            return null;
+        }
+        return new Anchor(
+                resolveAnchorType(villager),
+                location.getWorld().getName(),
+                location.getBlockX(),
+                location.getBlockY(),
+                location.getBlockZ());
     }
 
     private String buildVillageName(Location anchor) {
@@ -154,46 +386,64 @@ public final class VillageIdentityService {
         return String.join(", ", attributes);
     }
 
+    /**
+     * Zaehlt Villager im Umkreis, die denselben geografischen Dorfmittelpunkt
+     * teilen.  Verwendet nur {@link #resolveAnchor(Villager)} (keine
+     * Registrierungslogik), um Endlosrekursion mit
+     * {@link #resolveOrRegisterVillageId(Villager)} zu vermeiden.
+     */
     private int estimateVillagePopulation(Villager villager, Location anchor) {
-        String villageId = buildVillageId(anchor);
         int population = 0;
-        for (org.bukkit.entity.Entity entity : anchor.getWorld().getNearbyEntities(anchor, 96.0D, 48.0D, 96.0D)) {
+        for (org.bukkit.entity.Entity entity : anchor.getWorld().getNearbyEntities(anchor, VILLAGE_RADIUS, VILLAGE_RADIUS, VILLAGE_RADIUS)) {
             if (!(entity instanceof Villager nearbyVillager)) {
                 continue;
             }
-
             Location nearbyAnchor = resolveAnchor(nearbyVillager);
-            if (!hasWorld(nearbyAnchor)) {
-                continue;
-            }
-
-            if (villageId.equals(buildVillageId(nearbyAnchor))) {
+            if (nearbyAnchor != null && nearbyAnchor.getWorld() != null
+                    && nearbyAnchor.getWorld().equals(anchor.getWorld())
+                    && nearbyAnchor.distanceSquared(anchor) < 64.0D) { // 8 Blocks Toleranz
                 population++;
             }
         }
-
         return Math.max(1, population);
     }
 
     private String buildVillageEventSummary(Villager villager, Location anchor) {
+        // Trauerzustand hat Vorrang vor Wetter/Tageszeit
+        String villageId = resolveOrRegisterVillageId(villager);
+        if (villageId == null) {
+            villageId = "unregistered";
+        }
+        boolean inMourning = mourningService != null && mourningService.isVillageInMourning(villageId);
+        boolean hasChief = chiefRepository != null && chiefRepository.findActiveByVillageId(villageId).isPresent();
+
+        String chiefStatus;
+        if (inMourning) {
+            chiefStatus = " Das Dorf trauert um seinen gefallenen Haeuptling.";
+        } else if (hasChief) {
+            chiefStatus = " Der Dorfhaeuptling ist anwesend.";
+        } else {
+            chiefStatus = " Das Dorf hat derzeit keinen Haeuptling.";
+        }
+
         if (anchor.getWorld().isThundering()) {
-            return "Ein Gewitter drueckt auf die Stimmung und haelt viele Dorfbewohner eher in Deckung.";
+            return "Ein Gewitter drueckt auf die Stimmung und haelt viele Dorfbewohner eher in Deckung." + chiefStatus;
         }
         if (anchor.getWorld().hasStorm()) {
-            return "Regen bestimmt gerade den Dorfalltag und bremst die Arbeit im Freien.";
+            return "Regen bestimmt gerade den Dorfalltag und bremst die Arbeit im Freien." + chiefStatus;
         }
 
         long time = anchor.getWorld().getTime();
         if (time >= 12300L && time < 23850L) {
-            return "Es ist Nacht, und das Dorf wirkt vorsichtig und zurueckgezogen.";
+            return "Es ist Nacht, und das Dorf wirkt vorsichtig und zurueckgezogen." + chiefStatus;
         }
         if (hasWorld(villager.getMemory(MemoryKey.JOB_SITE)) || hasWorld(villager.getMemory(MemoryKey.POTENTIAL_JOB_SITE))) {
-            return "Es ist ein ruhiger Arbeitstag, und die Dorfbewohner gehen ihren ueblichen Aufgaben nach.";
+            return "Es ist ein ruhiger Arbeitstag, und die Dorfbewohner gehen ihren ueblichen Aufgaben nach." + chiefStatus;
         }
         if (hasWorld(villager.getMemory(MemoryKey.MEETING_POINT))) {
-            return "Im Dorf ist gerade ein ruhiger, geordneter Alltag ohne auffaellige Zwischenfaelle spuerbar.";
+            return "Im Dorf ist gerade ein ruhiger, geordneter Alltag ohne auffaellige Zwischenfaelle spuerbar." + chiefStatus;
         }
-        return "Im Dorf gibt es aktuell kein herausstechendes Ereignis; alles wirkt eher ruhig und gewoehnlich.";
+        return "Im Dorf gibt es aktuell kein herausstechendes Ereignis; alles wirkt eher ruhig und gewoehnlich." + chiefStatus;
     }
 
     private String formatBiome(Biome biome) {

@@ -1,15 +1,18 @@
 package de.ajsch.villagerai.service;
 
-import de.ajsch.villagerai.model.Chief;
+import de.ajsch.villagerai.model.Speaker;
 import de.ajsch.villagerai.model.Quest;
 import de.ajsch.villagerai.model.QuestStatus;
 import de.ajsch.villagerai.model.QuestType;
 import de.ajsch.villagerai.storage.QuestRepository;
+import de.ajsch.villagerai.model.VillagePerimeter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.logging.Logger;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.EntityType;
@@ -21,10 +24,27 @@ import org.bukkit.potion.PotionType;
 public final class QuestService {
 
     private final QuestRepository questRepository;
+    private final Logger logger;
+    private final LightLevelScanner lightLevelScanner;
+    private final VillagePerimeterService villagePerimeterService;
+    private final VillageIdentityService villageIdentityService;
+    private final DarkBlockCache darkBlockCache;
     private volatile long talkQuestCooldownMillis;
 
-    public QuestService(QuestRepository questRepository, long talkQuestCooldownSeconds) {
+    public QuestService(
+            QuestRepository questRepository,
+            Logger logger,
+            LightLevelScanner lightLevelScanner,
+            VillagePerimeterService villagePerimeterService,
+            VillageIdentityService villageIdentityService,
+            DarkBlockCache darkBlockCache,
+            long talkQuestCooldownSeconds) {
         this.questRepository = questRepository;
+        this.logger = logger;
+        this.lightLevelScanner = lightLevelScanner;
+        this.villagePerimeterService = villagePerimeterService;
+        this.villageIdentityService = villageIdentityService;
+        this.darkBlockCache = darkBlockCache;
         reloadTalkQuestCooldown(talkQuestCooldownSeconds);
     }
 
@@ -32,18 +52,18 @@ public final class QuestService {
         this.talkQuestCooldownMillis = Math.max(0L, talkQuestCooldownSeconds) * 1000L;
     }
 
-    public Quest offerTalkQuest(UUID playerUuid, Chief chief, String title, String description) {
+    public Quest offerTalkQuest(UUID playerUuid, Speaker speaker, String title, String description) {
         long now = System.currentTimeMillis();
         Quest quest = new Quest(
                 createQuestId(),
                 playerUuid,
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 0,
                 QuestType.TALK,
                 title,
                 description,
-                chief.chiefId(),
+                speaker.speakerId(),
                 1,
                 0,
                 QuestStatus.OFFERED,
@@ -53,25 +73,25 @@ public final class QuestService {
         return quest;
     }
 
-    public Quest activateTalkQuest(UUID playerUuid, Chief chief, String title, String description) {
-        return acceptQuest(offerTalkQuest(playerUuid, chief, title, description).questId()).orElseThrow();
+    public Quest activateTalkQuest(UUID playerUuid, Speaker speaker, String title, String description) {
+        return acceptQuest(offerTalkQuest(playerUuid, speaker, title, description).questId()).orElseThrow();
     }
 
-    public Quest activateDeliverQuest(UUID playerUuid, Chief chief, Material material, int amount) {
-        return activateDeliverQuest(playerUuid, chief, material, amount, 0);
+    public Quest activateDeliverQuest(UUID playerUuid, Speaker speaker, Material material, int amount) {
+        return activateDeliverQuest(playerUuid, speaker, material, amount, 0);
     }
 
-    public Quest activateDeliverQuest(UUID playerUuid, Chief chief, Material material, int amount, int difficultyTier) {
+    public Quest activateDeliverQuest(UUID playerUuid, Speaker speaker, Material material, int amount, int difficultyTier) {
         long now = System.currentTimeMillis();
         Quest quest = new Quest(
                 createQuestId(),
                 playerUuid,
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 Math.max(0, difficultyTier),
                 QuestType.DELIVER,
                 "Liefere " + amount + " " + formatMaterial(material),
-                "Bringe " + amount + " " + formatMaterial(material) + " zu " + chief.chatName() + ".",
+                "Bringe " + amount + " " + formatMaterial(material) + " zu " + speaker.displayName() + ".",
                 material.name() + ":" + amount,
                 amount,
                 0,
@@ -82,21 +102,21 @@ public final class QuestService {
         return quest;
     }
 
-    public Quest activateRepairQuest(UUID playerUuid, Chief chief, Material material, int amount) {
-        return activateRepairQuest(playerUuid, chief, material, amount, 0);
+    public Quest activateRepairQuest(UUID playerUuid, Speaker speaker, Material material, int amount) {
+        return activateRepairQuest(playerUuid, speaker, material, amount, 0);
     }
 
-    public Quest activateRepairQuest(UUID playerUuid, Chief chief, Material material, int amount, int difficultyTier) {
+    public Quest activateRepairQuest(UUID playerUuid, Speaker speaker, Material material, int amount, int difficultyTier) {
         long now = System.currentTimeMillis();
         Quest quest = new Quest(
                 createQuestId(),
                 playerUuid,
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 Math.max(0, difficultyTier),
                 QuestType.REPAIR,
                 "Repariere mit " + amount + " " + formatMaterial(material),
-                "Bringe " + amount + " " + formatMaterial(material) + " fuer Reparaturen zu " + chief.chatName() + ".",
+                "Bringe " + amount + " " + formatMaterial(material) + " fuer Reparaturen zu " + speaker.displayName() + ".",
                 material.name() + ":" + amount,
                 amount,
                 0,
@@ -107,21 +127,21 @@ public final class QuestService {
         return quest;
     }
 
-    public Quest activateBuildQuest(UUID playerUuid, Chief chief, Material material, int amount) {
-        return activateBuildQuest(playerUuid, chief, material, amount, 0);
+    public Quest activateBuildQuest(UUID playerUuid, Speaker speaker, Material material, int amount) {
+        return activateBuildQuest(playerUuid, speaker, material, amount, 0);
     }
 
-    public Quest activateBuildQuest(UUID playerUuid, Chief chief, Material material, int amount, int difficultyTier) {
+    public Quest activateBuildQuest(UUID playerUuid, Speaker speaker, Material material, int amount, int difficultyTier) {
         long now = System.currentTimeMillis();
         Quest quest = new Quest(
                 createQuestId(),
                 playerUuid,
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 Math.max(0, difficultyTier),
                 QuestType.BUILD,
                 "Baue " + amount + " " + formatMaterial(material),
-                "Platziere " + amount + " " + formatMaterial(material) + " fuer " + chief.chatName() + ".",
+                "Platziere " + amount + " " + formatMaterial(material) + " fuer " + speaker.displayName() + ".",
                 material.name(),
                 amount,
                 0,
@@ -132,21 +152,21 @@ public final class QuestService {
         return quest;
     }
 
-    public Quest activateBreedQuest(UUID playerUuid, Chief chief, EntityType entityType, int amount) {
-        return activateBreedQuest(playerUuid, chief, entityType, amount, 0);
+    public Quest activateBreedQuest(UUID playerUuid, Speaker speaker, EntityType entityType, int amount) {
+        return activateBreedQuest(playerUuid, speaker, entityType, amount, 0);
     }
 
-    public Quest activateBreedQuest(UUID playerUuid, Chief chief, EntityType entityType, int amount, int difficultyTier) {
+    public Quest activateBreedQuest(UUID playerUuid, Speaker speaker, EntityType entityType, int amount, int difficultyTier) {
         long now = System.currentTimeMillis();
         Quest quest = new Quest(
                 createQuestId(),
                 playerUuid,
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 Math.max(0, difficultyTier),
                 QuestType.BREED,
                 "Zuechte " + amount + " " + formatEntityType(entityType),
-                "Zuechte " + amount + " " + formatEntityType(entityType) + " fuer " + chief.chatName() + ".",
+                "Zuechte " + amount + " " + formatEntityType(entityType) + " fuer " + speaker.displayName() + ".",
                 entityType.name(),
                 amount,
                 0,
@@ -157,22 +177,22 @@ public final class QuestService {
         return quest;
     }
 
-    public Quest activateBrewQuest(UUID playerUuid, Chief chief, PotionType potionType, int amount) {
-        return activateBrewQuest(playerUuid, chief, potionType, amount, 0);
+    public Quest activateBrewQuest(UUID playerUuid, Speaker speaker, PotionType potionType, int amount) {
+        return activateBrewQuest(playerUuid, speaker, potionType, amount, 0);
     }
 
-    public Quest activateBrewQuest(UUID playerUuid, Chief chief, PotionType potionType, int amount, int difficultyTier) {
+    public Quest activateBrewQuest(UUID playerUuid, Speaker speaker, PotionType potionType, int amount, int difficultyTier) {
         long now = System.currentTimeMillis();
         String potionName = formatPotionType(potionType);
         Quest quest = new Quest(
                 createQuestId(),
                 playerUuid,
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 Math.max(0, difficultyTier),
                 QuestType.BREW,
                 "Braue " + amount + " " + potionName,
-                "Bringe " + amount + " " + potionName + " zu " + chief.chatName() + ".",
+                "Bringe " + amount + " " + potionName + " zu " + speaker.displayName() + ".",
                 potionType.name() + ":" + amount,
                 amount,
                 0,
@@ -183,23 +203,23 @@ public final class QuestService {
         return quest;
     }
 
-    public Quest activateFetchQuest(Player player, Chief chief, Material material, int amount) {
-        return activateFetchQuest(player, chief, material, amount, 0);
+    public Quest activateFetchQuest(Player player, Speaker speaker, Material material, int amount) {
+        return activateFetchQuest(player, speaker, material, amount, 0);
     }
 
-    public Quest activateFetchQuest(Player player, Chief chief, Material material, int amount, int difficultyTier) {
+    public Quest activateFetchQuest(Player player, Speaker speaker, Material material, int amount, int difficultyTier) {
         long now = System.currentTimeMillis();
         int initialProgress = Math.min(amount, countMaterial(player, material));
         Quest quest = new Quest(
                 createQuestId(),
                 player.getUniqueId(),
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 Math.max(0, difficultyTier),
                 QuestType.FETCH,
                 "Sammle " + amount + " " + formatMaterial(material),
                 "Besorge " + amount + " " + formatMaterial(material) + " und melde dich danach bei "
-                        + chief.chatName() + ".",
+                        + speaker.displayName() + ".",
                 material.name() + ":" + amount,
                 amount,
                 initialProgress,
@@ -210,21 +230,21 @@ public final class QuestService {
         return quest;
     }
 
-    public Quest activateKillQuest(UUID playerUuid, Chief chief, EntityType entityType, int amount) {
-        return activateKillQuest(playerUuid, chief, entityType, amount, 0);
+    public Quest activateKillQuest(UUID playerUuid, Speaker speaker, EntityType entityType, int amount) {
+        return activateKillQuest(playerUuid, speaker, entityType, amount, 0);
     }
 
-    public Quest activateKillQuest(UUID playerUuid, Chief chief, EntityType entityType, int amount, int difficultyTier) {
+    public Quest activateKillQuest(UUID playerUuid, Speaker speaker, EntityType entityType, int amount, int difficultyTier) {
         long now = System.currentTimeMillis();
         Quest quest = new Quest(
                 createQuestId(),
                 playerUuid,
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 Math.max(0, difficultyTier),
                 QuestType.KILL,
                 "Toete " + amount + " " + formatEntityType(entityType),
-                "Besiege " + amount + " " + formatEntityType(entityType) + " fuer " + chief.chatName() + ".",
+                "Besiege " + amount + " " + formatEntityType(entityType) + " fuer " + speaker.displayName() + ".",
                 entityType.name(),
                 amount,
                 0,
@@ -235,13 +255,13 @@ public final class QuestService {
         return quest;
     }
 
-    public Quest activateVisitQuest(UUID playerUuid, Chief chief, String worldName, int targetX, int targetZ, int radius) {
-        return activateVisitQuest(playerUuid, chief, worldName, targetX, targetZ, radius, 0);
+    public Quest activateVisitQuest(UUID playerUuid, Speaker speaker, String worldName, int targetX, int targetZ, int radius) {
+        return activateVisitQuest(playerUuid, speaker, worldName, targetX, targetZ, radius, 0);
     }
 
     public Quest activateVisitQuest(
             UUID playerUuid,
-            Chief chief,
+            Speaker speaker,
             String worldName,
             int targetX,
             int targetZ,
@@ -251,13 +271,13 @@ public final class QuestService {
         Quest quest = new Quest(
                 createQuestId(),
                 playerUuid,
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 Math.max(0, difficultyTier),
                 QuestType.VISIT,
                 "Reise nach X " + targetX + " / Z " + targetZ,
                 "Erreiche den Ort bei X " + targetX + " / Z " + targetZ + " und melde dich danach bei "
-                        + chief.chatName() + ".",
+                        + speaker.displayName() + ".",
                 worldName + ":" + targetX + ":" + targetZ + ":" + radius,
                 1,
                 0,
@@ -270,19 +290,73 @@ public final class QuestService {
 
     public Quest activateSecureQuest(
             UUID playerUuid,
-            Chief chief,
+            Speaker speaker,
             Material material,
             int amount,
             String worldName,
             int targetX,
             int targetZ,
             int radius) {
-        return activateSecureQuest(playerUuid, chief, material, amount, worldName, targetX, targetZ, radius, 0);
+        return activateSecureQuest(playerUuid, speaker, material, amount, worldName, targetX, targetZ, radius, 0);
+    }
+
+    /**
+     * Creates a SECURE quest using a raw targetKey string (e.g. village-light format).
+     * The {@code goal} is determined from the {@code targetKey} if it contains a goal segment.
+     */
+    public Quest activateSecureQuestByTargetKey(
+            UUID playerUuid,
+            Speaker speaker,
+            Material material,
+            int amount,
+            String worldName,
+            int targetX,
+            int targetZ,
+            int radius,
+            int difficultyTier,
+            String targetKey) {
+        long now = System.currentTimeMillis();
+        int goal = amount > 0 ? amount : 0;
+        // For village-light quests, initialDarkCount is the goal (beseitigte dunkle Bloecke),
+        // extracted from the targetKey if it's a light mode key.
+        if (targetKey != null && targetKey.contains("|light|")) {
+            String[] parts = targetKey.split("\\|");
+            // format: material|world|villageId|light|goal|initialDark|subCenterX|subCenterY|subCenterZ
+            if (parts.length >= 6) {
+                try {
+                    int initialDark = Integer.parseInt(parts[5]);
+                    goal = initialDark;
+                } catch (NumberFormatException ignored) {
+                    // keep goal as 0 or amount
+                }
+            }
+        }
+        if (goal <= 0) {
+            goal = 1;
+        }
+        Quest quest = new Quest(
+                createQuestId(),
+                playerUuid,
+                speaker.speakerId(),
+                speaker.villageId(),
+                Math.max(0, difficultyTier),
+                QuestType.SECURE,
+                "Bereich ausleuchten (" + goal + " dunkle Stellen)",
+                "Erhelle einen Sub-Bereich im Dorf bei X " + targetX + " / Z " + targetZ
+                        + " und melde dich danach bei " + speaker.displayName() + ".",
+                targetKey != null ? targetKey : (material.name() + ":" + worldName + ":" + targetX + ":" + targetZ + ":" + radius),
+                goal,
+                0,
+                QuestStatus.ACTIVE,
+                now,
+                now);
+        questRepository.saveQuest(quest);
+        return quest;
     }
 
     public Quest activateSecureQuest(
             UUID playerUuid,
-            Chief chief,
+            Speaker speaker,
             Material material,
             int amount,
             String worldName,
@@ -294,14 +368,14 @@ public final class QuestService {
         Quest quest = new Quest(
                 createQuestId(),
                 playerUuid,
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 Math.max(0, difficultyTier),
                 QuestType.SECURE,
                 "Sichere mit " + amount + " " + formatMaterial(material),
                 "Platziere " + amount + " " + formatMaterial(material)
                         + " bei X " + targetX + " / Z " + targetZ
-                        + " und melde dich danach bei " + chief.chatName() + ".",
+                        + " und melde dich danach bei " + speaker.displayName() + ".",
                 material.name() + ":" + worldName + ":" + targetX + ":" + targetZ + ":" + radius,
                 amount,
                 0,
@@ -345,9 +419,9 @@ public final class QuestService {
                 .max(Comparator.comparingLong(Quest::updatedAtEpochMillis));
     }
 
-    public Optional<Quest> findLatestQuestForChief(UUID playerUuid, String chiefId) {
+    public Optional<Quest> findLatestQuestForChief(UUID playerUuid, String speakerId) {
         return questRepository.findByPlayerUuid(playerUuid).stream()
-                .filter(quest -> quest.chiefId().equals(chiefId))
+                .filter(quest -> quest.speakerId().equals(speakerId))
                 .max(Comparator.comparingLong(Quest::updatedAtEpochMillis));
     }
 
@@ -361,12 +435,12 @@ public final class QuestService {
                 });
     }
 
-    public Collection<Quest> cancelActiveQuestsForChief(String chiefId) {
+    public Collection<Quest> cancelActiveQuestsForChief(String speakerId) {
         long now = System.currentTimeMillis();
         Collection<Quest> cancelledQuests = new ArrayList<>();
         for (Quest quest : questRepository.findAll()) {
             if ((quest.status() != QuestStatus.OFFERED && quest.status() != QuestStatus.ACTIVE)
-                    || !quest.chiefId().equals(chiefId)) {
+                    || !quest.speakerId().equals(speakerId)) {
                 continue;
             }
 
@@ -377,7 +451,7 @@ public final class QuestService {
         return cancelledQuests;
     }
 
-    public TalkQuestAvailability validateQuestActivation(UUID playerUuid, String chiefId) {
+    public TalkQuestAvailability validateQuestActivation(UUID playerUuid, String speakerId) {
         Optional<Quest> activeQuest = findActiveQuest(playerUuid);
         if (activeQuest.isPresent()) {
             return new TalkQuestAvailability(
@@ -388,7 +462,7 @@ public final class QuestService {
                     "Du hast bereits eine aktive Quest: " + activeQuest.get().title() + ". Brich sie erst ab oder schliesse sie ab.");
         }
 
-        Optional<Quest> latestCompletedQuest = findLatestQuestForChief(playerUuid, chiefId)
+        Optional<Quest> latestCompletedQuest = findLatestQuestForChief(playerUuid, speakerId)
                 .filter(quest -> quest.status() == QuestStatus.COMPLETED);
         if (latestCompletedQuest.isPresent() && talkQuestCooldownMillis > 0L) {
             long elapsedMillis = System.currentTimeMillis() - latestCompletedQuest.get().updatedAtEpochMillis();
@@ -405,7 +479,7 @@ public final class QuestService {
         }
 
         long cancelCooldownMillis = talkQuestCooldownMillis / 5L;
-        Optional<Quest> latestCancelledQuest = findLatestQuestForChief(playerUuid, chiefId)
+        Optional<Quest> latestCancelledQuest = findLatestQuestForChief(playerUuid, speakerId)
                 .filter(quest -> quest.status() == QuestStatus.CANCELLED);
         if (latestCancelledQuest.isPresent() && cancelCooldownMillis > 0L) {
             long elapsedMillis = System.currentTimeMillis() - latestCancelledQuest.get().updatedAtEpochMillis();
@@ -424,8 +498,8 @@ public final class QuestService {
             return new TalkQuestAvailability(true, QuestAvailabilityFailureReason.NONE, null, 0L, null);
     }
 
-    public TalkQuestAvailability validateTalkQuestActivation(UUID playerUuid, String chiefId) {
-        return validateQuestActivation(playerUuid, chiefId);
+    public TalkQuestAvailability validateTalkQuestActivation(UUID playerUuid, String speakerId) {
+        return validateQuestActivation(playerUuid, speakerId);
     }
 
     public Collection<Quest> completeActiveTalkQuests(UUID playerUuid, String targetKey) {
@@ -445,13 +519,13 @@ public final class QuestService {
         return completedQuests;
     }
 
-    public Collection<DeliverQuestUpdate> completeActiveDeliverQuests(Player player, String chiefId) {
+    public Collection<DeliverQuestUpdate> completeActiveDeliverQuests(Player player, String speakerId) {
         long now = System.currentTimeMillis();
         Collection<DeliverQuestUpdate> updates = new ArrayList<>();
         for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
             if (quest.type() != QuestType.DELIVER
                     || quest.status() != QuestStatus.ACTIVE
-                    || !quest.chiefId().equals(chiefId)) {
+                    || !quest.speakerId().equals(speakerId)) {
                 continue;
             }
 
@@ -485,13 +559,13 @@ public final class QuestService {
         return updates;
     }
 
-    public Collection<DeliverQuestUpdate> completeActiveRepairQuests(Player player, String chiefId) {
+    public Collection<DeliverQuestUpdate> completeActiveRepairQuests(Player player, String speakerId) {
         long now = System.currentTimeMillis();
         Collection<DeliverQuestUpdate> updates = new ArrayList<>();
         for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
             if (quest.type() != QuestType.REPAIR
                     || quest.status() != QuestStatus.ACTIVE
-                    || !quest.chiefId().equals(chiefId)) {
+                    || !quest.speakerId().equals(speakerId)) {
                 continue;
             }
 
@@ -525,13 +599,13 @@ public final class QuestService {
         return updates;
     }
 
-    public Collection<BrewQuestUpdate> completeActiveBrewQuests(Player player, String chiefId) {
+    public Collection<BrewQuestUpdate> completeActiveBrewQuests(Player player, String speakerId) {
         long now = System.currentTimeMillis();
         Collection<BrewQuestUpdate> updates = new ArrayList<>();
         for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
             if (quest.type() != QuestType.BREW
                     || quest.status() != QuestStatus.ACTIVE
-                    || !quest.chiefId().equals(chiefId)) {
+                    || !quest.speakerId().equals(speakerId)) {
                 continue;
             }
 
@@ -565,13 +639,13 @@ public final class QuestService {
         return updates;
     }
 
-    public Collection<Quest> completeReadyInteractionQuests(UUID playerUuid, String chiefId) {
+    public Collection<Quest> completeReadyInteractionQuests(UUID playerUuid, String speakerId) {
         long now = System.currentTimeMillis();
         Collection<Quest> completedQuests = new ArrayList<>();
         Optional<Quest> activeQuest = findActiveQuest(playerUuid);
         for (Quest quest : questRepository.findByPlayerUuid(playerUuid)) {
             if (quest.status() != QuestStatus.ACTIVE
-                    || !quest.chiefId().equals(chiefId)
+                    || !quest.speakerId().equals(speakerId)
                     || quest.progress() < quest.goal()) {
                 continue;
             }
@@ -705,17 +779,17 @@ public final class QuestService {
 
     public Quest activateExploreQuest(
             UUID playerUuid,
-            Chief chief,
+            Speaker speaker,
             String worldName,
             int targetX,
             int targetZ,
             int radius) {
-        return activateExploreQuest(playerUuid, chief, worldName, targetX, targetZ, radius, 0);
+        return activateExploreQuest(playerUuid, speaker, worldName, targetX, targetZ, radius, 0);
     }
 
     public Quest activateExploreQuest(
             UUID playerUuid,
-            Chief chief,
+            Speaker speaker,
             String worldName,
             int targetX,
             int targetZ,
@@ -725,13 +799,13 @@ public final class QuestService {
         Quest quest = new Quest(
                 createQuestId(),
                 playerUuid,
-                chief.chiefId(),
-                chief.villageId(),
+                speaker.speakerId(),
+                speaker.villageId(),
                 Math.max(0, difficultyTier),
                 QuestType.EXPLORE,
                 "Erkunde X " + targetX + " / Z " + targetZ,
                 "Erreiche den Ort bei X " + targetX + " / Z " + targetZ + " und melde dich danach bei "
-                        + chief.chatName() + ".",
+                        + speaker.displayName() + ".",
                 worldName + ":" + targetX + ":" + targetZ + ":" + radius,
                 1,
                 0,
@@ -798,6 +872,12 @@ public final class QuestService {
                 continue;
             }
 
+            // ---- village-light path: handled via delayed scan in QuestLifecycleListener ----
+            if (isVillageLightSecureQuest(quest)) {
+                continue;
+            }
+
+            // ---- block-count path (original) ----
             SecureRequirement requirement = parseSecureRequirement(quest).orElse(null);
             if (requirement == null) {
                 continue;
@@ -824,6 +904,96 @@ public final class QuestService {
             updates.add(new SecureQuestUpdate(updatedQuest, newProgress >= quest.goal()));
         }
         return updates;
+    }
+
+    /**
+     * Re-scans the sub-area of a village-light SECURE quest and returns the updated progress.
+     * Used for {@code BlockBreakEvent} (light source removal) and quest-giver interaction checks.
+     * May be called without an event – always safe to run synchronously.
+     */
+    public Optional<SecureQuestUpdate> syncVillageLightProgress(Player player, Quest quest) {
+        if (!isVillageLightSecureQuest(quest) || quest.status() != QuestStatus.ACTIVE) {
+            return Optional.empty();
+        }
+        if (!player.getUniqueId().equals(quest.playerUuid())) {
+            return Optional.empty();
+        }
+
+        String worldName = extractSecureWorldName(quest);
+        if (worldName == null || !worldName.equalsIgnoreCase(player.getWorld().getName())) {
+            return Optional.empty();
+        }
+        int[] subCenter = extractVillageLightSubCenter(quest);
+        if (subCenter == null) {
+            return Optional.empty();
+        }
+
+        int darkCount = lightLevelScanner.scanSubArea(
+                player.getWorld(), subCenter[0], subCenter[2], extractVillageLightAreaSize(quest));
+        int initialDark = quest.goal();
+        int removed = Math.max(0, initialDark - darkCount);
+        int newProgress = Math.min(quest.goal(), Math.max(0, removed));
+        if (newProgress == quest.progress()) {
+            return Optional.empty();
+        }
+
+        long now = System.currentTimeMillis();
+        Quest updatedQuest = quest.withProgress(newProgress, now);
+        questRepository.saveQuest(updatedQuest);
+        return Optional.of(new SecureQuestUpdate(updatedQuest, newProgress >= quest.goal()));
+    }
+
+    /**
+     * Applies {@link #syncVillageLightProgress} for all active village-light quests of a player.
+     */
+    public Collection<SecureQuestUpdate> syncAllVillageLightProgress(Player player) {
+        Collection<SecureQuestUpdate> updates = new ArrayList<>();
+        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+            syncVillageLightProgress(player, quest).ifPresent(updates::add);
+        }
+        return updates;
+    }
+
+    private String extractSecureWorldName(Quest quest) {
+        if (quest.targetKey() == null) {
+            return null;
+        }
+        // village-light uses pipe separator, block-count uses colon
+        if (quest.targetKey().contains("|light|")) {
+            String[] parts = quest.targetKey().split("\\|");
+            return parts.length >= 2 ? parts[1] : null;
+        }
+        String[] parts = quest.targetKey().split(":");
+        if (parts.length < 2) {
+            return null;
+        }
+        return parts[1];
+    }
+
+    public int[] extractVillageLightSubCenter(Quest quest) {
+        if (quest.targetKey() == null || !quest.targetKey().contains("|light|")) {
+            return null;
+        }
+        String[] parts = quest.targetKey().split("\\|");
+        // format: material|world|villageId|light|goal|initialDark|subCenterX|subCenterY|subCenterZ
+        if (parts.length < 9) {
+            return null;
+        }
+        try {
+            return new int[] {
+                Integer.parseInt(parts[6]),
+                Integer.parseInt(parts[7]),
+                Integer.parseInt(parts[8])
+            };
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    public int extractVillageLightAreaSize(Quest quest) {
+        // TODO: could be stored in targetKey or read from config.
+        // For now a reasonable default that matches SubAreaSelector / DarkBlockCache.
+        return 20;
     }
 
     public Optional<DeliveryRequirement> parseDeliveryRequirement(Quest quest) {
@@ -948,8 +1118,10 @@ public final class QuestService {
             return Optional.empty();
         }
 
-        String[] parts = quest.targetKey().split(":", 5);
-        if (parts.length != 5) {
+        String[] parts = quest.targetKey().split(":");
+        // Support both old 5-part format (material:world:x:z:radius)
+        // and new village-light format (material:world:villageId:light:goal:initialDark:cx:cy:cz)
+        if (parts.length < 5) {
             return Optional.empty();
         }
 
@@ -959,15 +1131,26 @@ public final class QuestService {
         }
 
         try {
+            // Always extract worldName from parts[1], x from parts[2], z from parts[3], radius from parts[4]
+            int targetX = Integer.parseInt(parts[2]);
+            int targetZ = Integer.parseInt(parts[3]);
+            int radius = Integer.parseInt(parts[4]);
             return Optional.of(new SecureRequirement(
                     material,
                     parts[1],
-                    Integer.parseInt(parts[2]),
-                    Integer.parseInt(parts[3]),
-                    Integer.parseInt(parts[4])));
+                    targetX,
+                    targetZ,
+                    radius));
         } catch (NumberFormatException exception) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Returns true if the given SECURE quest uses the village-light mode.
+     */
+    public boolean isVillageLightSecureQuest(Quest quest) {
+        return quest.type() == QuestType.SECURE && quest.targetKey() != null && quest.targetKey().contains("|light|");
     }
 
     private String createQuestId() {

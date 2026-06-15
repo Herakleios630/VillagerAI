@@ -1,0 +1,37 @@
+> Task :compileJava FAILED
+.\gradlew.bat : 
+In Zeile:1 Zeichen:79
++ ... \Coding\Minecraft\VillagerAI"; .\gradlew.bat compileJava 2>&1 | Out-F ...
++                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> java.io.IOException: Unable to delete directory 
+'C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main'
+    Failed to delete some children. This might happen because a process has files open or has its working directory 
+set in the target directory.
+    - C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de\ajsch\villagerai\ai
+    - C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de\ajsch\villagerai\command
+    - C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de\ajsch\villagerai\config
+    - C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de\ajsch\villagerai\event
+    - 
+C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de\ajsch\villagerai\listener
+    - C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de\ajsch\villagerai\model
+    - C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de\ajsch\villagerai\storage
+    - C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de\ajsch\villagerai\util
+    - C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de\ajsch\villagerai
+    - C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de\ajsch
+    - C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI\build\classes\java\main\de
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 2s
+1 actionable task: 1 executed
