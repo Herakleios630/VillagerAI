@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Phase 10 – Whisper (2/5) – ConversationService auf B
 quelle: "roadmap.md → Phase 10 – Öffentliche & Flüster-Unterhaltung"
 related-roadmap: "Plannung/whisper.md"
 created: "2026-06-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Phase 10 – Whisper (2/5) – ConversationService auf Broadcast umbauen

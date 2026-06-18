@@ -465,6 +465,18 @@ public final class VillageChiefPlugin extends JavaPlugin {
             villagerDebugOverlayService);
         chiefCommand.setExecutor(executor);
         chiefCommand.setTabCompleter(executor);
+
+        // Register /whisper and /w as aliases pointing to the same executor
+        PluginCommand whisperCommand = getCommand("whisper");
+        if (whisperCommand != null) {
+            whisperCommand.setExecutor(executor);
+            whisperCommand.setTabCompleter(executor);
+        }
+        PluginCommand wCommand = getCommand("w");
+        if (wCommand != null) {
+            wCommand.setExecutor(executor);
+            wCommand.setTabCompleter(executor);
+        }
     }
 
     public VillagePerimeterService villagePerimeterService() {

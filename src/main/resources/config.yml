@@ -19,6 +19,19 @@ conversation:
   repeat-guard:
     recent-chief-replies-limit: 3
     low-health-threshold: 0.7
+  visibility:
+    default-mode: PUBLIC
+    public-radius-blocks: 50
+    public-player-prefix: "sagt"
+    whisper-player-prefix: "flüsterst"
+    public-chief-prefix: "sagt"
+    whisper-chief-prefix: "flüstert"
+    particles:
+      enabled: true
+      public-particle: VILLAGER_HAPPY
+      whisper-particle: SOUL
+      particle-count: 4
+      particle-interval-ticks: 8
 
 interaction:
   target-range-blocks: 6.0

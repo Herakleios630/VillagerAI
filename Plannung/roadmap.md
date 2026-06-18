@@ -411,27 +411,27 @@ Spieler können zwischen öffentlichem Sprechen (Umkreis hörbar) und Flüstern 
 → Vollständiges Konzept: `Plannung/whisper.md`
 
 ### Features
-- [ ] Zwei Modi: PUBLIC (Standard) und WHISPER (privat)
-- [ ] Spieler-Nachrichten UND Villager-Antworten beide sichtbar gemäß Modus
-- [ ] `/whisper` Toggle-Command (Alias `/w`) während aktiver Konversation
-- [ ] Action-Bar-Feedback beim Umschalten
-- [ ] Partikel-Effekte über dem Villager beim Sprechen (HAPPY_VILLAGER / SOUL)
-- [ ] KI-Kontext: Villager weiß ob öffentlich oder geflüstert (Prompt-Anpassung)
+- [x] Zwei Modi: PUBLIC (Standard) und WHISPER (privat)
+- [x] Spieler-Nachrichten UND Villager-Antworten beide sichtbar gemäß Modus
+- [x] `/whisper` Toggle-Command (Alias `/w`) während aktiver Konversation
+- [x] Action-Bar-Feedback beim Umschalten
+- [x] Partikel-Effekte über dem Villager beim Sprechen (HAPPY_VILLAGER / SOUL)
+- [x] KI-Kontext: Villager weiß ob öffentlich oder geflüstert (Prompt-Anpassung)
 
 ### Technische Aufgaben
-- [ ] `ConversationVisibility` Enum (PUBLIC, WHISPER) als Modell-Klasse
-- [ ] `ConversationSession` erweitern: `visibility` Feld + `participants Set<UUID>`
-- [ ] `AIRequest` erweitern: `String conversationVisibility` Feld
-- [ ] `ConversationService.broadcastToNearby()` für öffentliche Nachrichten
-- [ ] `ConversationService.sendChiefMessage()` auf Broadcast vs Direkt-Nachricht umbauen
-- [ ] `ConversationService.handlePlayerChat()` Spieler-Nachricht broadcasten
-- [ ] `PlayerChatListener.onAsyncChat()` Visibility aus Session lesen + durchreichen
-- [ ] `ChiefCommand` Subcommand `/whisper` + `/w` implementieren
-- [ ] `PluginDataLoader` neue `conversation.visibility` Config-Sektion einlesen
-- [ ] Python `prompt_builder.py` `conversationVisibility` in Prompt einweben
-- [ ] Python `reply_builder.py` Visibility-Feld durchleiten
-- [ ] `config.yml` um `conversation.visibility` Sektion erweitern
-- [ ] Phase-2-Vorbereitung: `participants` Set, Enum statt Boolean, session-basierter Broadcast
+- [x] `ConversationVisibility` Enum (PUBLIC, WHISPER) als Modell-Klasse
+- [x] `ConversationSession` erweitern: `visibility` Feld + `participants Set<UUID>`
+- [x] `AIRequest` erweitern: `String conversationVisibility` Feld
+- [x] `ConversationService.broadcastToNearby()` für öffentliche Nachrichten
+- [x] `ConversationService.sendChiefMessage()` auf Broadcast vs Direkt-Nachricht umbauen
+- [x] `ConversationService.handlePlayerChat()` Spieler-Nachricht broadcasten
+- [x] `PlayerChatListener.onAsyncChat()` Visibility aus Session lesen + durchreichen
+- [x] `ChiefCommand` Subcommand `/whisper` + `/w` implementieren
+- [x] `PluginDataLoader` neue `conversation.visibility` Config-Sektion einlesen
+- [x] Python `prompt_builder.py` `conversationVisibility` in Prompt einweben
+- [x] Python `reply_builder.py` Visibility-Feld durchleiten
+- [x] `config.yml` um `conversation.visibility` Sektion erweitern
+- [x] Phase-2-Vorbereitung: `participants` Set, Enum statt Boolean, session-basierter Broadcast
 
 ### Ergebnis
 Spieler steuern die Sichtbarkeit ihrer Gespräche – für mehr Immersion und soziale Transparenz.

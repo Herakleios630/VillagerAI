@@ -8,7 +8,15 @@ description: Village chief AI MVP for Paper.
 commands:
   chief:
     description: Manage village chiefs and active conversations.
-    usage: /chief <set|unset|info|exit|debug|quest|reload>
+    usage: /chief <set|unset|info|exit|debug|quest|perimeter|reload|forget|whisper>
+    permission: villagerai.chief
+  whisper:
+    description: Toggle whisper mode during active conversation.
+    usage: /whisper [on|off]
+    permission: villagerai.chief
+  w:
+    description: Toggle whisper mode during active conversation.
+    usage: /w [on|off]
     permission: villagerai.chief
 
 permissions:

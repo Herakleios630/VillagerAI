@@ -129,7 +129,8 @@ public final class HttpAIService implements AIService {
                                                                 request.playerMessage(),
                                                                 request.memoryEnabled(),
                                                                 request.memoryTriggerFallbackPhrases() == null ? java.util.List.of() : request.memoryTriggerFallbackPhrases(),
-                request.isSmalltalk()));
+                request.isSmalltalk(),
+                request.conversationVisibility()));
     }
 
     private HttpReplyPayload parseReply(String responseBody) {
@@ -199,7 +200,8 @@ public final class HttpAIService implements AIService {
             String playerMessage,
                         @SerializedName("memory_enabled") boolean memoryEnabled,
                         @SerializedName("memory_trigger_fallback_phrases") java.util.List<String> memoryTriggerFallbackPhrases,
-            boolean isSmalltalk) {
+            boolean isSmalltalk,
+            String conversationVisibility) {
                 }
 
         private record HttpReplyPayload(String replyText, String factsDebug) {
