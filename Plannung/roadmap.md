@@ -717,3 +717,203 @@ Dieser Block ist bewusst nachgelagert und soll erst folgen, wenn Dialog, Questfl
 
 ### Ergebnis
 Weniger Brueche zwischen Gespraech, NPC-Verhalten und langfristiger Rollenarchitektur.
+
+---
+
+# Phase 11 – Core+Modules Refactoring
+## Ziel
+Monolithisches Plugin in einen leichtgewichtigen Core und 4 unabhängig aktivierbare Module aufteilen.
+Der Core bleibt vanilla-kompatibel – bei deaktivierten Modulen verhält sich der Server
+exakt wie Vanilla Minecraft.
+
+→ Vollständiges Konzept: `docs/refactoring-core-modules.md`
+
+### Rahmenbedingungen
+- Package-Tiefe von 1 (flach) auf 3 (`core/`, `modules/quests/handler/`, …)
+- Maximale Dateigröße von 900+ auf <400 Zeilen pro Datei
+- Features pro Modul abschaltbar via `config.yml`
+- Öffentliche API für andere Plugins über `api/` Package
+- Lose Kopplung zwischen Modulen via EventBus statt direkter Methodenaufrufe
+- SQLite-Backend als Zukunftsbaustein vorbereitet (Core-Storage-Interfaces)
+
+---
+
+## Phase 11.0 – Analyse & Vorbereitung
+
+### Aufgaben
+- [ ] 11.0.1 Alle Imports und Abhängigkeiten zwischen Services kartografieren (Abhängigkeitsgraph)
+- [ ] 11.0.2 Testfälle für Regression dokumentieren (Startup, Smoke-Test je Feature)
+- [ ] 11.0.3 Feature-Flags in `config.yml` definieren (`modules.quests.enabled: true` etc.)
+- [ ] 11.0.4 `Module.java` Interface + `ModuleContext.java` + `CommandRegistry.java` definieren
+  - `ModuleContext` gibt Zugriff auf Plugin, Logger, EventBus, ConfigService, CommandRegistry, AIService, alle Storage-Repos, World-Services
+- [ ] 11.0.5 `CoreEventBus.java` implementieren (register/unregister/post) + Unit-Test
+  - `ConcurrentHashMap<Class<?>, List<Consumer<?>>>` mit `CopyOnWriteArrayList`
+  - Events liegen in `api/event/`
+- [ ] 11.0.6 `CorePlugin.java` aus `VillageChiefPlugin.java` extrahieren
+  - Lifecycle, `ModuleRegistry` als `LinkedHashMap`, `topologicalSort` (Kahn-Algorithmus)
+  - Dependency Resolution: Modul wird nur enabled wenn alle `dependencies()` aktiv sind
+- [ ] 11.0.7 `CoreConfigService.java`: `getModuleConfig(id)` → `ConfigurationSection`
+  - Jedes Modul liest NUR seine eigene Section, keine Quer-Zugriffe
+
+### Ergebnis
+Modul-Interface, EventBus, CorePlugin und Config-Service stehen. Plugin kann als reiner Core starten.
+
+---
+
+## Phase 11.1 – Core-Extraktion (Verschiebungen)
+
+### Aufgaben
+- [ ] 11.1.1 Storage-Interfaces nach `core/storage/api/` verschieben (7 Interfaces)
+  - `ChiefRepository`, `QuestRepository`, `ReputationRepository`, `SpeakerRepository`, `VillageRepository`, `VillagerTradeRepository`, `ConversationHistoryRepository`
+- [ ] 11.1.2 Yaml-Repos nach `core/storage/yaml/` verschieben (8 Implementierungen)
+  - Alle `Yaml*Repository.java` Dateien – keine Code-Änderungen, nur Package-Wechsel
+- [ ] 11.1.3 World-Services nach `core/world/` verschieben
+  - `DarkBlockCache.java`, `LightLevelScanner.java`, `VillagePerimeterService.java`
+  - `WorldScannerService.java` definieren (vereinheitlicht DarkBlockCache + LightLevelScanner → `AreaScanResult`)
+  - `ParticleMarkerService.java` im Core implementieren (zeitlich begrenzte Partikel-Effekte)
+- [ ] 11.1.4 `VillagerConfinementService` nach `core/vanilla/` verschieben (bleibt immer an)
+- [ ] 11.1.5 `config.yml` um `modules:` Sektion erweitern (Feature-Flags für alle 4 Module)
+- [ ] 11.1.6 Build + Startup-Test: Plugin startet als reiner Core (alle Module disabled, keine Features)
+
+### Ergebnis
+Alle Dateien in neuer Package-Struktur. Plugin kompiliert und startet ohne Module.
+
+---
+
+## Phase 11.2 – Reputation-Modul (erstes Modul)
+
+### Aufgaben
+- [ ] 11.2.1 `ReputationModule.java` implementieren (`implements Module`)
+  - Keine Dependencies (Standalone-Modul)
+- [ ] 11.2.2 `ReputationService` + `ReputationListener` entkoppeln, in Modul verschieben
+  - Keine Direkt-Imports aus anderen Modulen
+- [ ] 11.2.3 `ReputationChangedEvent` in API-Event umwandeln, via EventBus posten
+  - Event liegt in `api/event/`
+- [ ] 11.2.4 Build + Deploy + Test: Reputation-Modul standalone funktioniert
+  - Rufänderungen via EventBus, Listener reagiert korrekt
+
+### Ergebnis
+Erstes Modul funktioniert eigenständig. Beweis dass die Core-Architektur trägt.
+
+---
+
+## Phase 11.3 – Quests-Modul
+
+### Aufgaben
+- [ ] 11.3.1 `QuestsModule.java` mit Dependency `reputation`
+- [ ] 11.3.2 `QuestTypeRegistry` + `QuestHandler` Interface implementieren
+  - Registry: Map<QuestType/Template, QuestHandler> via YAML konfigurierbar
+- [ ] 11.3.3 `QuestCategory` Enum definieren, bestehende QuestTypes kategorisieren
+  - Kategorien: TALK, GATHER, COMBAT, EXPLORE, BUILD
+- [ ] 11.3.4 QuestService aufteilen in `QuestCrudService` + `QuestProgressService`
+  - Maximal 400 Zeilen pro Datei
+- [ ] 11.3.5 Ersten QuestHandler via Registry+YAML demonstrieren (z.B. TALK)
+- [ ] 11.3.6 Alle 12 QuestHandler implementieren (je ~50-100 Zeilen)
+  - TALK, DELIVER, FETCH, KILL, BUILD, BREED, BREW, VISIT, EXPLORE, SECURE, RETINUE_*, LEGENDARY_*
+- [ ] 11.3.7 `QuestOfferService` + `QuestRewardService` migrieren
+- [ ] 11.3.8 `QuestMarkerService` + `QuestUiService` auf `ParticleMarkerService` umstellen
+- [ ] 11.3.9 `LegendaryUnlockService` migrieren
+- [ ] 11.3.10 Listener migrieren (`QuestLifecycleListener`, `QuestUiListener`)
+- [ ] 11.3.11 `ConfigValidator` für Quests registrieren (Pflichtfelder prüfen)
+- [ ] 11.3.12 QuestRepository um In-Memory-Index `Map<UUID,List<Quest>>` erweitern
+- [ ] 11.3.13 Build + Deploy + Test: Alle Quest-Typen funktionieren
+  - Annahme, Fortschritt, Abschluss, Reward, Cooldown
+
+### Ergebnis
+Das größte Modul ist extrahiert. Quest-System vollständig gekapselt.
+
+---
+
+## Phase 11.4 – Interaction-Modul
+
+### Aufgaben
+- [ ] 11.4.1 `InteractionModule.java` mit Dependencies `quests`, `reputation`
+- [ ] 11.4.2 Speaker-Subsystem migrieren
+  - `SpeakerService`, `ChiefAutoAssignmentService`, `SpeakerLifecycleListener`
+  - `VillagerInteractListener`, `ChiefMeetingObserver`
+- [ ] 11.4.3 ConversationService aufteilen (max. 400 Zeilen pro Datei)
+  - `ConversationOrchestrator` (Hauptablauf)
+  - `ConversationStateMachine` (Zustandsübergänge)
+  - `SpontaneousOfferEngine` (Quest-Angebote im Gespräch)
+- [ ] 11.4.4 VillagerContext + Trade migrieren
+  - `VillagerContextService`, `VillagerTradeService`, `VillagerTradeListener`
+- [ ] 11.4.5 Chief-spezifische Services einhängen
+  - `ChiefService`, `ChiefVisualService`, `ChiefDeathHandler`
+- [ ] 11.4.6 `PlayerChatListener` migrieren
+- [ ] 11.4.7 `VillagerDebugOverlayService` migrieren
+- [ ] 11.4.8 Build + Deploy + Test: Speaker, Chief, Chat, Trade funktionieren
+
+### Ergebnis
+Interaction-Modul kapselt alle sprecher- und gesprächsbezogenen Features.
+
+---
+
+## Phase 11.5 – Village-Modul
+
+### Aufgaben
+- [ ] 11.5.1 `VillageModule.java` mit Dependencies `interaction`, `reputation`
+- [ ] 11.5.2 `VillageIdentityService` + `VillagePerimeterDisplayService` migrieren
+- [ ] 11.5.3 `MourningService` migrieren (inkl. ChunkLoad-Listener für Trauer-Flora)
+- [ ] 11.5.4 `VillageLightParticleMarkerService` auf `ParticleMarkerService` umstellen
+- [ ] 11.5.5 `GlobalTickService` (1 BukkitTask/sec) einführen, alle Modul-Timer umhängen
+  - Löst mehrere individuelle BukkitScheduler-Tasks ab
+- [ ] 11.5.6 `DarkBlockCache` Invalidation via `BlockPhysicsEvent`
+- [ ] 11.5.7 ConversationHistory-Pruning (async, via aiExecutor)
+- [ ] 11.5.8 Build + Deploy + Test: Alle Module aktiv, alle Features funktionieren
+
+### Ergebnis
+Alle 4 Module sind extrahiert und funktionieren im Verbund.
+
+---
+
+## Phase 11.6 – Monolith-Code entfernen & Finalisierung
+
+### Aufgaben
+- [ ] 11.6.1 `VillageChiefPlugin.java` komplett durch `CorePlugin.java` ersetzen
+  - Alte Datei löschen, CorePlugin als Main-Class in plugin.yml eintragen
+- [ ] 11.6.2 Alte Direkt-Abhängigkeiten löschen (tote Imports, ungenutzte Felder)
+- [ ] 11.6.3 `SubCommandHandler` Interface + `CommandRegistry` fertigstellen
+- [ ] 11.6.4 ChiefCommand in SubCommand-Handler aufteilen, in jeweilige Module verschieben
+  - Quest-SubCommands → quests-Modul, Reputation → reputation-Modul, etc.
+- [ ] 11.6.5 API-Package finalisieren: Events + geteilte Models prüfen und dokumentieren
+- [ ] 11.6.6 `config.yml` finale Struktur: `modules.<name>.enabled` + modul-spezifische Sektionen
+- [ ] 11.6.7 Finaler Regressionstest: Alle Features mit allen Modulen aktiv
+- [ ] 11.6.8 Dokumentation aktualisieren: README.md, developer-guide.md, handover.md
+
+### Ergebnis
+Plugin ist vollständig modularisiert. Kein Legacy-Code mehr vorhanden.
+Core ohne Module = Vanilla Minecraft. Module unabhängig voneinander aktivierbar.
+
+---
+
+### Modul-Abhängigkeitsgraph
+```
+reputation (Standalone)
+quests → reputation
+interaction → quests, reputation
+village → interaction, reputation
+```
+
+### Package-Struktur (Zielbild)
+```
+src/main/java/de/ajsch/villagerai/
+├── core/           # Infrastruktur, vanilla-kompatibel
+│   ├── config/     # CoreConfigService, PluginDataLoader
+│   ├── ai/         # AIService, HttpAIService, DummyAIService
+│   ├── storage/api/    # Repository-Interfaces
+│   ├── storage/yaml/   # Yaml-Implementierungen
+│   ├── world/      # DarkBlockCache, LightLevelScanner, WorldScannerService, ParticleMarkerService
+│   ├── vanilla/    # VillagerConfinementService
+│   ├── event/      # CoreEventBus
+│   ├── command/    # CommandRegistry
+│   └── util/       # Keys, EntityTargetingUtil
+├── api/            # Öffentliche API (Events + geteilte Models)
+│   ├── event/      # ReputationChangedEvent, QuestCompletedEvent, ...
+│   └── model/      # Quest, QuestStatus, QuestType, Speaker, VillageRecord, ...
+├── model/          # Modul-interne Modelle
+└── modules/
+    ├── quests/     # QuestsModule + Handler + Listener
+    ├── reputation/ # ReputationModule
+    ├── interaction/# InteractionModule (speaker + conversation + chief + debug)
+    └── village/    # VillageModule
+```
