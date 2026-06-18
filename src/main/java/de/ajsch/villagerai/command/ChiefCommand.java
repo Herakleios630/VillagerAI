@@ -93,8 +93,13 @@ public final class ChiefCommand implements TabExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        // Handle standalone /whisper and /w commands
+        if ("whisper".equalsIgnoreCase(label) || "w".equalsIgnoreCase(label)) {
+            return handleWhisper(sender, args);
+        }
+
         if (args.length == 0) {
-            sender.sendMessage(Component.text("Verwendung: /chief <set|unset|info|exit|debug|quest|perimeter|reload|forget>", NamedTextColor.YELLOW));
+            sender.sendMessage(Component.text("Verwendung: /chief <set|unset|info|exit|debug|quest|perimeter|reload|forget|whisper>", NamedTextColor.YELLOW));
             return true;
         }
 
@@ -108,6 +113,7 @@ public final class ChiefCommand implements TabExecutor {
             case "perimeter" -> handlePerimeter(sender);
             case "reload" -> handleReload(sender);
             case "forget" -> handleForget(sender);
+            case "whisper" -> handleWhisper(sender, args);
             default -> {
                 sender.sendMessage(Component.text("Unbekannter Subcommand.", NamedTextColor.RED));
                 yield true;
@@ -314,6 +320,49 @@ public final class ChiefCommand implements TabExecutor {
         if (!conversationService.endConversation(player.getUniqueId())) {
             sender.sendMessage(Component.text("Du fuehrst gerade kein Gespraech.", NamedTextColor.RED));
             return true;
+        }
+
+        return true;
+    }
+
+    private boolean handleWhisper(CommandSender sender, String[] args) {
+        Player player = requirePlayer(sender);
+        if (player == null) {
+            return true;
+        }
+
+        ConversationService.ConversationSnapshot snapshot = conversationService
+                .getConversation(player.getUniqueId()).orElse(null);
+
+        if (snapshot == null) {
+            player.sendMessage(Component.text("Du fuehrst kein aktives Gespraech.", NamedTextColor.RED));
+            player.sendActionBar(Component.text("Kein aktives Gespraech – /whisper ist nur waehrend einer Konversation moeglich", NamedTextColor.RED));
+            return true;
+        }
+
+        String currentVisibility = snapshot.visibility();
+        String newVisibility;
+
+        if (args.length >= 1 && args[0].equalsIgnoreCase("on")) {
+            newVisibility = "WHISPER";
+        } else if (args.length >= 1 && args[0].equalsIgnoreCase("off")) {
+            newVisibility = "PUBLIC";
+        } else {
+            newVisibility = "WHISPER".equalsIgnoreCase(currentVisibility) ? "PUBLIC" : "WHISPER";
+        }
+
+        boolean success = conversationService.setVisibility(player.getUniqueId(), newVisibility);
+        if (!success) {
+            player.sendMessage(Component.text("Fehler beim Umschalten des Modus.", NamedTextColor.RED));
+            return true;
+        }
+
+        if ("PUBLIC".equalsIgnoreCase(newVisibility)) {
+            player.sendActionBar(Component.text("Oeffentlicher Modus – andere koennen zuhoeren", NamedTextColor.GREEN));
+            player.sendMessage(Component.text("Du sprichst jetzt oeffentlich. Andere im Umkreis koennen zuhoeren.", NamedTextColor.GREEN));
+        } else {
+            player.sendActionBar(Component.text("Fluester-Modus – nur du hoerst das Gespraech", NamedTextColor.GRAY));
+            player.sendMessage(Component.text("Du fluesterst jetzt. Nur du hoerst das Gespraech.", NamedTextColor.GRAY));
         }
 
         return true;
@@ -1321,8 +1370,16 @@ public final class ChiefCommand implements TabExecutor {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        // Handle standalone /whisper and /w tab completions
+        if ("whisper".equalsIgnoreCase(alias) || "w".equalsIgnoreCase(alias)) {
+            if (args.length == 0 || args.length == 1) {
+                return List.of("on", "off");
+            }
+            return List.of();
+        }
+
         if (args.length == 1) {
-            return List.of("set", "unset", "info", "exit", "debug", "quest", "perimeter", "reload", "forget");
+            return List.of("set", "unset", "info", "exit", "debug", "quest", "perimeter", "reload", "forget", "whisper");
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("debug")) {
             return List.of("chat", "watch", "set");
@@ -1341,6 +1398,9 @@ public final class ChiefCommand implements TabExecutor {
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("quest") && args[1].equalsIgnoreCase("difficulty")) {
             return List.of("normal", "0", "1", "2", "3", "4");
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("whisper")) {
+            return List.of("on", "off");
         }
         return List.of();
     }

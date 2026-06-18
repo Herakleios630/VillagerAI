@@ -266,6 +266,22 @@ Manuelle Test-Commands fuer diese Typen:
 - `/chief quest kill <mob> <anzahl>`
 - `/chief quest visit <x> <z> [radius]`
 
+## Flüster-Modus (`/whisper` Command)
+
+Während einer aktiven Konversation mit einem Villager kannst du mit `/whisper` (Alias `/w`) zwischen öffentlichem und privatem Modus umschalten:
+
+- **PUBLIC (Standard):** Deine Nachrichten UND die Antworten des Villagers sind für alle Spieler in < 50 Blöcken Entfernung sichtbar.
+- **WHISPER:** Nur du siehst das Gespräch. Andere Spieler im Umkreis sehen nichts.
+
+Befehle:
+- `/whisper` oder `/w` – Toggle zwischen PUBLIC und WHISPER
+- `/whisper on` – Explizit Flüster-Modus einschalten
+- `/whisper off` – Explizit öffentlichen Modus einschalten
+
+Die Action-Bar zeigt den aktuellen Modus an. Im Flüster-Modus erscheinen SOUL-Partikel über dem Villager, im öffentlichen Modus HAPPY_VILLAGER-Partikel.
+
+Außerhalb einer aktiven Konversation meldet `/whisper` eine Fehlermeldung.
+
 ## Aktuelle Diagnose-Hilfen
 
 - `/chief debug` zeigt Beruf, Dorfname, Beschreibung, Merkmale, Biom, geschaetzte Bewohnerzahl, Ereignis-, Ruf- und Questdaten

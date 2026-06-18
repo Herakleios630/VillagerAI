@@ -273,6 +273,50 @@ public final class PluginDataLoader {
                 plugin.getConfig().getDouble("conversation.repeat-guard.low-health-threshold", 0.7D));
     }
 
+    public String getConversationDefaultVisibility() {
+        return plugin.getConfig().getString("conversation.visibility.default-mode", "PUBLIC");
+    }
+
+    public int getConversationPublicRadiusBlocks() {
+        return plugin.getConfig().getInt("conversation.visibility.public-radius-blocks", 50);
+    }
+
+    public String getConversationPublicPlayerPrefix() {
+        return plugin.getConfig().getString("conversation.visibility.public-player-prefix", "sagt");
+    }
+
+    public String getConversationWhisperPlayerPrefix() {
+        return plugin.getConfig().getString("conversation.visibility.whisper-player-prefix", "flüsterst");
+    }
+
+    public String getConversationPublicChiefPrefix() {
+        return plugin.getConfig().getString("conversation.visibility.public-chief-prefix", "sagt");
+    }
+
+    public String getConversationWhisperChiefPrefix() {
+        return plugin.getConfig().getString("conversation.visibility.whisper-chief-prefix", "flüstert");
+    }
+
+    public boolean getConversationParticlesEnabled() {
+        return plugin.getConfig().getBoolean("conversation.visibility.particles.enabled", true);
+    }
+
+    public String getConversationPublicParticle() {
+        return plugin.getConfig().getString("conversation.visibility.particles.public-particle", "VILLAGER_HAPPY");
+    }
+
+    public String getConversationWhisperParticle() {
+        return plugin.getConfig().getString("conversation.visibility.particles.whisper-particle", "SOUL");
+    }
+
+    public int getConversationParticleCount() {
+        return plugin.getConfig().getInt("conversation.visibility.particles.particle-count", 4);
+    }
+
+    public int getConversationParticleIntervalTicks() {
+        return plugin.getConfig().getInt("conversation.visibility.particles.particle-interval-ticks", 8);
+    }
+
     private List<QuestRewardService.RewardItem> loadRewardItems(QuestType questType, ConfigurationSection rewardSection) {
         List<QuestRewardService.RewardItem> rewardItems = new ArrayList<>();
         for (Map<?, ?> rawEntry : rewardSection.getMapList("bonus-items")) {

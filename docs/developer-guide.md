@@ -56,7 +56,36 @@ Zirkuläre Abhängigkeit aufgelöst: `MourningService` bekommt `ChiefService` ni
 2. `ChiefService` erzeugen (bekommt mourningService im Konstruktor)
 3. `mourningService.setChiefService(chiefService)` nachträglich verdrahten"
 
-## Datenfluss AI-Request
+"## Schichten-Impact: Phase 10 – Conversation Visibility (Whisper, 2026-06-18)
+
+### Neue/Geänderte Komponenten
+
+| Schicht | Datei | Änderung |
+|---------|-------|----------|
+| Model | `ConversationVisibility.java` | NEU – Enum PUBLIC, WHISPER |
+| Service | `ConversationSession` (inner class) | ERWEITERT – `visibility` Feld + `participants Set<UUID>` |
+| Service | `ConversationService.java` | NEU – `broadcastToNearby()` für öffentliche Nachrichten; `sendChiefMessage()` auf Broadcast vs Direkt-Nachricht umgebaut; `handlePlayerChat()` broadcastet Spieler-Nachrichten |
+| Listener | `PlayerChatListener.java` | ERWEITERT – Visibility aus Session lesen + an ConversationService durchreichen |
+| Command | `ChiefCommand.java` | NEU – `/whisper` Subcommand (Alias `/w`) mit on/off/toggle |
+| Config | `PluginDataLoader.java` | ERWEITERT – neue `conversation.visibility` Config-Sektion einlesen |
+| Config | `config.yml` | ERWEITERT – `conversation.visibility` Sektion mit default-mode, Radien, Prefixes, Partikeln |
+| Model | `AIRequest.java` | ERWEITERT – `conversationVisibility` Feld |
+| Bridge | `prompt_builder.py` | ERWEITERT – `conversationVisibility` in Prompt als Verhaltenshinweis einweben |
+| Bridge | `reply_builder.py` | ERWEITERT – `conversationVisibility` aus Payload lesen und durchleiten |
+
+### Datenfluss Visibility
+```
+PlayerChatListener.onAsyncChat()
+  → session.getVisibility() [PUBLIC/WHISPER]
+  → aiRequest.setConversationVisibility(visibility.name())
+  → conversationService.handlePlayerChat()
+    ├─ WHISPER: direkte Spieler-Nachricht + sendet nur an playerUuid
+    └─ PUBLIC: broadcastToNearby() an alle Spieler in 50 Blöcken
+→ Bridge prompt_builder baut Visibility-Hinweis in Prompt ein
+→ Villager-Antwort wird nur an passende Zuhörer zugestellt
+```
+
+## Datenfluss AI-Request"
 
 ```
 VillagerInteractListener → ConversationService.startConversation()

@@ -22,9 +22,11 @@ import java.time.Duration;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -41,6 +43,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.advancement.Advancement;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
+import org.bukkit.Particle;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
@@ -178,12 +181,17 @@ public final class ConversationService {
         // VillageIdentity-Cache im Main-Thread befuellen (vermeidet Async-Chunk-Zugriffe)
         villageIdentityService.resolve(villager);
 
+        String defaultVisibility = plugin.getConfig().getString("conversation.visibility.default-mode", "PUBLIC");
+        Set<UUID> participants = new HashSet<>();
+        participants.add(player.getUniqueId());
         ConversationSession session = new ConversationSession(
                 UUID.randomUUID(),
                 speaker,
                 villager.getUniqueId(),
                 villager.hasAI(),
-            villagerContextService.resolve(villager, player.getUniqueId()));
+            villagerContextService.resolve(villager, player.getUniqueId()),
+            defaultVisibility,
+            participants);
         activeSessions.put(player.getUniqueId(), session);
         prepareVillagerForConversation(villager);
         orientVillagerTowardPlayer(villager, player);
@@ -423,7 +431,8 @@ public final class ConversationService {
         return Optional.of(new ConversationSnapshot(
                 session.speaker().speakerId(),
                 session.speaker().villageId(),
-                Duration.ofMillis(System.currentTimeMillis() - session.lastInteractionMillis().get()).toSeconds()));
+                Duration.ofMillis(System.currentTimeMillis() - session.lastInteractionMillis().get()).toSeconds(),
+                session.visibility()));
     }
 
     public String describeLegendaryBlocker(Player player, String chiefId, int villageReputationScore, int speakerReputationScore) {
@@ -501,6 +510,29 @@ public final class ConversationService {
         // Chat-Debug: Spieler-Eingabe loggen (NORMAL und VERBOSE)
         plugin.logChatDebug(VillageChiefPlugin.ChatDebugLevel.NORMAL,
                 "[INPUT] " + playerUuid + " -> " + session.speaker().chatName() + ": " + message);
+
+        // Broadcast player message based on visibility
+        if ("PUBLIC".equalsIgnoreCase(session.visibility())) {
+            Villager villager = resolveVillagerFromSession(session);
+            if (villager != null) {
+                String playerPrefix = plugin.getConfig().getString("conversation.visibility.public-player-prefix", "sagt");
+                Player onlinePlayer = Bukkit.getPlayer(playerUuid);
+                if (onlinePlayer != null) {
+                    Component playerMsg = Component.text("[" + onlinePlayer.getName() + "] ", NamedTextColor.GREEN)
+                            .append(Component.text(playerPrefix + " ", NamedTextColor.WHITE))
+                            .append(Component.text(message, NamedTextColor.WHITE));
+                    broadcastToNearby(session, villager, playerMsg);
+                }
+            }
+        } else {
+            String whisperPrefix = plugin.getConfig().getString("conversation.visibility.whisper-player-prefix", "flÃ¼sterst");
+            Player onlinePlayer = Bukkit.getPlayer(playerUuid);
+            if (onlinePlayer != null) {
+                onlinePlayer.sendMessage(Component.text("[Du] ", NamedTextColor.GREEN)
+                        .append(Component.text(whisperPrefix + " ", NamedTextColor.GRAY))
+                        .append(Component.text(message, NamedTextColor.GRAY)));
+            }
+        }
 
         if (handleConversationExitRequest(playerUuid, session, message)) {
             return;
@@ -630,7 +662,8 @@ public final class ConversationService {
                 message,
                                 plugin.getConfig().getBoolean("memory.enabled", false),
                 plugin.getConfig().getStringList("memory.trigger-fallback-phrases"),
-                isSmalltalk);
+                isSmalltalk,
+                session.visibility());
 
         // Chat-Debug: Prompt loggen (nur VERBOSE)
         logChatDebugPrompt(request);
@@ -1191,9 +1224,77 @@ public final class ConversationService {
         });
     }
 
+    private void broadcastToNearby(ConversationSession session, Villager villager, Component message) {
+        double radius = plugin.getConfig().getDouble("conversation.visibility.public-radius-blocks", 50);
+        Location loc = villager.getLocation();
+        if (loc.getWorld() == null) return;
+        for (Player nearby : loc.getWorld().getNearbyPlayers(loc, radius)) {
+            if (session.participants().contains(nearby.getUniqueId())) {
+                nearby.sendMessage(message);
+            }
+        }
+    }
+
+    private void spawnConversationParticles(ConversationSession session) {
+        if (!plugin.getConfig().getBoolean("conversation.visibility.particles.enabled", true)) return;
+
+        Villager villager = resolveVillagerFromSession(session);
+        if (villager == null || !villager.isValid()) return;
+
+        boolean isPublic = "PUBLIC".equalsIgnoreCase(session.visibility());
+        String particleName = isPublic
+            ? plugin.getConfig().getString("conversation.visibility.particles.public-particle", "VILLAGER_HAPPY")
+            : plugin.getConfig().getString("conversation.visibility.particles.whisper-particle", "SOUL");
+
+        Particle particle;
+        try {
+            particle = Particle.valueOf(particleName.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            plugin.getLogger().warning("Unbekannter Particle-Typ in Config: " + particleName);
+            return;
+        }
+
+        Location loc = villager.getEyeLocation().add(0, 0.4, 0);
+        int count = plugin.getConfig().getInt("conversation.visibility.particles.particle-count", 4);
+        villager.getWorld().spawnParticle(particle, loc, count, 0.2, 0.2, 0.2, 0.02);
+    }
+
+    private Villager resolveVillagerFromSession(ConversationSession session) {
+        String speakerId = session.speaker().speakerId();
+        if (speakerId.startsWith("villager-")) {
+            try {
+                UUID entityUuid = UUID.fromString(speakerId.substring("villager-".length()));
+                org.bukkit.entity.Entity entity = Bukkit.getEntity(entityUuid);
+                if (entity instanceof Villager v && v.isValid()) {
+                    return v;
+                }
+            } catch (IllegalArgumentException ignored) {}
+        }
+        return null;
+    }
+
     private void sendChiefMessage(Player player, ConversationSession session, String replyText, NamedTextColor color) {
-        player.sendMessage(Component.text("[" + session.speaker().chatName() + "] ", NamedTextColor.GOLD)
-                .append(Component.text(replyText, color)));
+        boolean isPublic = "PUBLIC".equalsIgnoreCase(session.visibility());
+        String prefix = isPublic
+            ? plugin.getConfig().getString("conversation.visibility.public-chief-prefix", "sagt")
+            : plugin.getConfig().getString("conversation.visibility.whisper-chief-prefix", "flÃ¼stert");
+
+        Component message = Component.text("[" + session.speaker().chatName() + "] ", NamedTextColor.GOLD)
+                .append(Component.text(prefix + " ", isPublic ? NamedTextColor.WHITE : NamedTextColor.GRAY))
+                .append(Component.text(replyText, color));
+
+        if (isPublic) {
+            Villager villager = resolveVillagerFromSession(session);
+            if (villager != null) {
+                broadcastToNearby(session, villager, message);
+            } else {
+                player.sendMessage(message);
+            }
+        } else {
+            player.sendMessage(message);
+        }
+
+        spawnConversationParticles(session);
     }
 
     private boolean looksLikeQuestRequest(String message) {
@@ -1853,7 +1954,22 @@ public final class ConversationService {
             double repeatFallbackLowHealthThreshold) {
         }
 
-    public record ConversationSnapshot(String chiefId, String villageId, long idleSeconds) {
+    public boolean setVisibility(UUID playerUuid, String visibility) {
+        ConversationSession session = activeSessions.get(playerUuid);
+        if (session == null) return false;
+        ConversationSession updated = new ConversationSession(
+            session.conversationId(), session.speaker(), session.villagerUuid(),
+            session.hadAiEnabledBeforeConversation(), session.villagerContext(),
+            session.awaitingReply(), session.queuedPlayerMessage(),
+            session.pendingQuestOffer(), session.pendingQuestOfferWasSpontaneous(),
+            session.lastInteractionMillis(),
+            visibility,
+            session.participants());
+        activeSessions.put(playerUuid, updated);
+        return true;
+    }
+
+    public record ConversationSnapshot(String chiefId, String villageId, long idleSeconds, String visibility) {
     }
 
     private record ConversationSession(
@@ -1866,14 +1982,18 @@ public final class ConversationService {
             AtomicReference<String> queuedPlayerMessage,
             AtomicReference<QuestOfferService.QuestOffer> pendingQuestOffer,
             AtomicBoolean pendingQuestOfferWasSpontaneous,
-            AtomicLong lastInteractionMillis) {
+            AtomicLong lastInteractionMillis,
+            String visibility,
+            Set<UUID> participants) {
 
         private ConversationSession(
                 UUID conversationId,
                 Speaker speaker,
                 UUID villagerUuid,
                 boolean hadAiEnabledBeforeConversation,
-                VillagerContext villagerContext) {
+                VillagerContext villagerContext,
+                String visibility,
+                Set<UUID> participants) {
             this(
                     conversationId,
                     speaker,
@@ -1884,7 +2004,9 @@ public final class ConversationService {
                     new AtomicReference<>(),
                     new AtomicReference<>(),
                     new AtomicBoolean(false),
-                    new AtomicLong(System.currentTimeMillis()));
+                    new AtomicLong(System.currentTimeMillis()),
+                    visibility,
+                    participants);
         }
     }
 }

@@ -1,6 +1,6 @@
-# Vn iillagerAI Handover
+# VillagerAI Handover
 
-Stand: 2026-06-13
+Stand: 2026-06-18
 
 ## Aktueller Status
 

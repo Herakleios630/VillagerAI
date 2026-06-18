@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Phase 10 – Whisper (5/5) – Integrationstest & Deploy
 quelle: "roadmap.md → Phase 10 – Öffentliche & Flüster-Unterhaltung"
 related-roadmap: "Plannung/whisper.md"
 created: "2026-06-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Phase 10 – Whisper (5/5) – Integrationstest & Deployment
@@ -37,12 +37,12 @@ Phase 10 ist implementiert (Karten 01–04), aber noch nicht getestet oder deplo
 
 ## Erbetene Hilfe
 
-### 5.1 Finaler Build
+### 5.1 Finaler Build ✅
 ```powershell
 Set-Location C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI
 .\gradlew.bat shadowJar -x test
 ```
-Muss fehlerfrei durchlaufen.
+BUILD SUCCESSFUL in 1s. JAR liegt unter `build/libs/VillagerAI-0.1.0-SNAPSHOT.jar` (742 KB).
 
 ### 5.2 Deployment
 ```powershell

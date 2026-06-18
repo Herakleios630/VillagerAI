@@ -58,5 +58,6 @@ public record AIRequest(
         String playerMessage,
         boolean memoryEnabled,
         java.util.List<String> memoryTriggerFallbackPhrases,
-        boolean isSmalltalk) {
+        boolean isSmalltalk,
+        String conversationVisibility) {
 }

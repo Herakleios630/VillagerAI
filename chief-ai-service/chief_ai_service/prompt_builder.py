@@ -110,6 +110,11 @@ def build_context_prompt(
         clean_summary = str(summary_text).strip()
         if not clean_summary.startswith("Gespräch begann."):
             sections.append(("Summary", clean_summary))
+    # ---- Visibility-Instruktion (nach Persönlichkeit, vor Regeln) ----
+    visibility = _build_visibility_section(payload)
+    if visibility.strip():
+        sections.append(("Sprechweise", visibility))
+
     # ---- Regeln (VOR Spieler-Nachricht, als letzte Datensektion) ----
     rules = _build_rules_section(payload, config)
     if rules.strip():
@@ -431,6 +436,27 @@ def _build_status_section(payload: dict) -> str:
             lines.append(f"{label}: {value}")
 
     return "\n".join(lines)
+
+
+def _build_visibility_section(payload: dict) -> str:
+    """Build a visibility instruction section for PUBLIC/WHISPER mode.
+
+    The field 'conversationVisibility' is set by the Java plugin and
+    can be 'PUBLIC' (others may overhear) or 'WHISPER' (private).
+    """
+    visibility = str(payload.get("conversationVisibility", "PUBLIC")).strip().upper()
+
+    if visibility == "PUBLIC":
+        return (
+            "Der Spieler spricht oeffentlich mit dir. Andere Dorfbewohner koennten mithoeren. "
+            "Bleib hoeflich, etwas foermlicher, und teile keine Geheimnisse des Spielers."
+        )
+    elif visibility == "WHISPER":
+        return (
+            "Der Spieler fluestert vertraulich mit dir. Nur er hoert dich. "
+            "Du darfst persoenlicher, direkter und offener sprechen."
+        )
+    return ""
 
 
 def _build_rules_section(payload: dict, config: dict) -> str:
