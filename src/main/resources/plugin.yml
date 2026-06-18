@@ -14,10 +14,7 @@ commands:
     description: Toggle whisper mode during active conversation.
     usage: /whisper [on|off]
     permission: villagerai.chief
-  w:
-    description: Toggle whisper mode during active conversation.
-    usage: /w [on|off]
-    permission: villagerai.chief
+  
 
 permissions:
   villagerai.chief:

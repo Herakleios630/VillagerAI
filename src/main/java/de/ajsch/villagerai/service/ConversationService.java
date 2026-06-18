@@ -652,7 +652,7 @@ public final class ConversationService {
                 combinedReputationSummary,
                 combinedReputationScore,
                 combinedReputationSummary,
-                !mourningService.isVillageInMourning(session.speaker().villageId()),
+                chiefRepository.findActiveByVillageId(session.speaker().villageId()).isPresent(),
                 mourningService.isVillageInMourning(session.speaker().villageId()),
                 buildChiefLocation(session.speaker()),
                 session.speaker().speakerStatus().name(),

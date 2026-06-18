@@ -64,8 +64,12 @@ public final class ChiefService {
             return markChief(villager, villageId, false);
         }
 
-        public Speaker markChief(Villager villager, String villageId, boolean silent) {
-        // Guard: bereits aktiver Chief
+                public Speaker markChief(Villager villager, String villageId, boolean silent) {
+        // Guard: existiert bereits ein ANDERER aktiver Chief für dieses Dorf?
+        // Wenn ja, diesen zuerst deaktivieren, bevor wir einen neuen krönen.
+        deactivateExistingChiefForVillage(villageId, villager.getUniqueId());
+
+        // Guard: ist DIESER Villager selbst bereits aktiver Chief?
         Optional<Speaker> existingSpeaker = speakerService.getSpeaker(villager);
         if (existingSpeaker.isPresent() && existingSpeaker.get().speakerStatus() == SpeakerStatus.AKTIV_CHIEF) {
             // Bereits in chiefs.yml gespeicherten Eintrag restaurieren
@@ -116,8 +120,63 @@ public final class ChiefService {
                 if (!silent) {
                     broadcastChiefCoronation(attrs, speaker);
                 }
-                logger.info("Chief " + speakerId + " gekrönt in Dorf " + villageId + " (Entity " + villager.getUniqueId() + ")");
+                                logger.info("Chief " + speakerId + " gekrönt in Dorf " + villageId + " (Entity " + villager.getUniqueId() + ")");
                 return speaker;
+    }
+
+    /**
+     * Deaktiviert einen bereits existierenden aktiven Chief für dieselbe villageId,
+     * falls es sich um einen ANDEREN Villager handelt. Verhindert doppelte Chiefs pro Dorf.
+     */
+    private void deactivateExistingChiefForVillage(String villageId, UUID newChiefEntityUuid) {
+        Optional<ChiefAttributes> existingAttrsOpt = chiefRepository.findActiveByVillageId(villageId);
+        if (existingAttrsOpt.isEmpty()) {
+            return;
+        }
+
+        ChiefAttributes existingAttrs = existingAttrsOpt.get();
+        if (existingAttrs.entityUuid().equals(newChiefEntityUuid)) {
+            return;
+        }
+
+        logger.warning("markChief: village " + villageId
+                + " hat bereits Chief " + existingAttrs.speakerId()
+                + " (entity " + existingAttrs.entityUuid()
+                + "), wird vor neuer Krönung deaktiviert.");
+
+        ChiefAttributes mournedAttrs = new ChiefAttributes(
+                existingAttrs.entityUuid(),
+                existingAttrs.speakerId(),
+                existingAttrs.villageId(),
+                existingAttrs.crownedAt(),
+                System.currentTimeMillis(),
+                false,
+                existingAttrs.visualTier(),
+                existingAttrs.biomeStyle(),
+                existingAttrs.bannerPattern(),
+                existingAttrs.legendaryUnlocked(),
+                existingAttrs.legendaryLastActivated());
+        chiefRepository.save(mournedAttrs);
+
+        org.bukkit.entity.Entity oldEntity = Bukkit.getEntity(existingAttrs.entityUuid());
+        if (oldEntity instanceof Villager oldVillager) {
+            Optional<Speaker> oldSpeaker = speakerService.getSpeaker(oldVillager);
+            oldSpeaker.ifPresent(s -> dropHeirloomBanner(oldVillager, existingAttrs, s));
+            chiefVisualService.stopCrownParticles(oldVillager.getUniqueId());
+            chiefVisualService.removeBanner(oldVillager.getUniqueId());
+            speakerService.demoteFromChief(oldVillager);
+            PersistentDataContainer oldContainer = oldVillager.getPersistentDataContainer();
+            oldContainer.remove(keys.chiefFlagKey());
+            oldContainer.remove(keys.chiefIdKey());
+            oldContainer.remove(keys.villageIdKey());
+            logger.info("markChief: alter Chief " + existingAttrs.speakerId()
+                    + " (entity " + existingAttrs.entityUuid()
+                    + ") deaktiviert, Heirloom-Banner gedroppt.");
+        } else {
+            logger.warning("markChief: alter Chief-Entity " + existingAttrs.entityUuid()
+                    + " nicht als Villager gefunden (vielleicht in ungeladenem Chunk), "
+                    + "nur ChiefAttributes deaktiviert.");
+        }
     }
 
     // ──────────────────────────────────────────────
