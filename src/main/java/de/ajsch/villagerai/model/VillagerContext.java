@@ -18,5 +18,7 @@ public record VillagerContext(
         String homePoi,
         String jobSitePoi,
         String potentialJobSitePoi,
-        String meetingPointPoi) {
+        String meetingPointPoi,
+        long mcDay,
+        long mcTime) {
 }

@@ -2,7 +2,7 @@
 title: "Arbeitsauftrag: ConversationService auf Speaker umbauen"
 quelle: "konzept-aufteilung-chief-villager.md → Schritt 10"
 created: "2025-01-16"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: ConversationService auf Speaker umbauen

@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: config.json memory.minecraft_time Sektion"
 quelle: "roadmap-memory.md → Phase 4b, Aufgabe 4b-6"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4b"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: config.json memory.minecraft_time Sektion

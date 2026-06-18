@@ -4,7 +4,7 @@ quelle: "roadmap.md → Chief_V2, Phase C (Punkt 4)"
 related-roadmap: "Plannung/roadmap.md"
 created: "2025-07-20"
 updated: "2025-07-21"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: ChiefVisualService reagiert auf ReputationChangedEvent

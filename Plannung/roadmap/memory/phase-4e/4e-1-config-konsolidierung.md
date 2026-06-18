@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Config-Konsolidierung Phase 4a–4d"
 quelle: "roadmap-memory.md → Phase 4e, Aufgabe 4e-1"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4e"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Config-Konsolidierung Phase 4a–4d

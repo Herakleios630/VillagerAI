@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: memory_db.py um mc_day/mc_time erweitern"
 quelle: "roadmap-memory.md → Phase 4b, Aufgabe 4b-3"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4b"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: memory_db.py um mc_day/mc_time erweitern

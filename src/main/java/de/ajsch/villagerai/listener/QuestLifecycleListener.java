@@ -24,6 +24,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityBreedEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityTransformEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -85,6 +86,44 @@ public final class QuestLifecycleListener implements Listener {
             hintWrongBreedTarget(player, event.getEntityType());
         }
     }
+
+    // ── RETINUE: Golem spawn ───────────────────────────────────────
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCreatureSpawn(CreatureSpawnEvent event) {
+        if (event.getEntityType() != EntityType.IRON_GOLEM) {
+            return;
+        }
+        if (!(event.getEntity().getEntitySpawnReason() == org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.BUILD_IRONGOLEM
+                || event.getEntity().getEntitySpawnReason() == org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.DISPENSE_EGG)) {
+            return;
+        }
+        // Find nearest player (within 16 blocks) as the creator
+        Player nearestPlayer = null;
+        double nearestDist = 16.0 * 16.0;
+        for (Player p : event.getLocation().getWorld().getPlayers()) {
+            double dist = p.getLocation().distanceSquared(event.getLocation());
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearestPlayer = p;
+            }
+        }
+        if (nearestPlayer == null) {
+            return;
+        }
+
+        Collection<QuestService.RetinueGolemUpdate> updates = questService.advanceRetinueGolemQuests(nearestPlayer, event.getLocation());
+        for (QuestService.RetinueGolemUpdate update : updates) {
+            if (update.readyToTurnIn()) {
+                nearestPlayer.sendMessage(Component.text(
+                        "Ziel erreicht: Der Golem steht! Kehre zum Chief zurueck.",
+                        NamedTextColor.YELLOW));
+            }
+            questUiService.refresh(nearestPlayer);
+        }
+    }
+
+    // ── RETINUE: Wall + Bell block place ────────────────────────────
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
@@ -150,8 +189,34 @@ public final class QuestLifecycleListener implements Listener {
             }
         }
 
+        // ── RETINUE: Wall and Bell progress ────────────────────────
+        Collection<QuestService.RetinueWallUpdate> wallUpdates = questService.advanceRetinueWallQuests(player, event.getBlockPlaced().getType(), event.getBlockPlaced().getLocation());
+        for (QuestService.RetinueWallUpdate update : wallUpdates) {
+            Quest q = update.quest();
+            player.sendMessage(Component.text(
+                    "Mauerbau-Fortschritt: " + q.title() + " (" + q.progress() + "/" + q.goal() + ")",
+                    NamedTextColor.GREEN));
+            questUiService.refresh(player);
+            if (update.readyToTurnIn()) {
+                player.sendMessage(Component.text(
+                        "Ziel erreicht: Kehre zum Chief zurueck!",
+                        NamedTextColor.YELLOW));
+            }
+        }
+
+        Collection<QuestService.RetinueBellUpdate> bellUpdates = questService.advanceRetinueBellQuests(player, event.getBlockPlaced().getType(), event.getBlockPlaced().getLocation());
+        for (QuestService.RetinueBellUpdate update : bellUpdates) {
+            if (update.readyToTurnIn()) {
+                player.sendMessage(Component.text(
+                        "Die Glocke ist platziert! Kehre zum Chief zurueck.",
+                        NamedTextColor.YELLOW));
+            }
+            questUiService.refresh(player);
+        }
+
         // Extra hint for wrong material in block-count secure or build quests
         if (buildUpdates.isEmpty() && secureUpdates.isEmpty()
+                && wallUpdates.isEmpty() && bellUpdates.isEmpty()
                 && (activeQuest == null || !questService.isVillageLightSecureQuest(activeQuest))) {
             hintWrongBlockTarget(player, event.getBlockPlaced().getType());
         }
@@ -314,6 +379,20 @@ public final class QuestLifecycleListener implements Listener {
         }
 
         Collection<QuestService.KillQuestUpdate> updates = questService.advanceKillQuests(killer, event.getEntityType());
+        // Also check legendary dragon quests
+        Collection<QuestService.KillQuestUpdate> legendaryUpdates = questService.advanceLegendaryDragonQuests(killer, event.getEntityType());
+        for (QuestService.KillQuestUpdate legendaryUpdate : legendaryUpdates) {
+            Quest legendaryQuest = legendaryUpdate.quest();
+            if (legendaryUpdate.readyToTurnIn()) {
+                killer.sendMessage(Component.text(
+                        "Quest-Fortschritt: " + legendaryQuest.title() + " (" + legendaryQuest.progress() + "/" + legendaryQuest.goal() + ")",
+                        NamedTextColor.GREEN));
+                killer.sendMessage(Component.text(
+                        "Ziel erreicht: Kehre zum Questgeber zurueck, um die Quest abzuschliessen.",
+                        NamedTextColor.YELLOW));
+                questUiService.refresh(killer);
+            }
+        }
         for (QuestService.KillQuestUpdate update : updates) {
             Quest quest = update.quest();
             killer.sendMessage(Component.text(

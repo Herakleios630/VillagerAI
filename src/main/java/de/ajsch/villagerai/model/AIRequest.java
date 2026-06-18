@@ -38,6 +38,8 @@ public record AIRequest(
         String jobSitePoi,
         String potentialJobSitePoi,
         String meetingPointPoi,
+        long mcDay,
+        long mcTime,
         int villageReputationScore,
         String villageReputationSummary,
         int speakerReputationScore,
@@ -55,5 +57,6 @@ public record AIRequest(
         UUID playerUuid,
         String playerMessage,
         boolean memoryEnabled,
-        java.util.List<String> memoryTriggerFallbackPhrases) {
+        java.util.List<String> memoryTriggerFallbackPhrases,
+        boolean isSmalltalk) {
 }

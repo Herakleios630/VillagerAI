@@ -38,4 +38,12 @@ Entfällt.
 3. Suche per grep nach `ConversationRole.CHIEF` im gesamten `src/`-Ordner
 4. Ersetze ALLE Fundstellen von `ConversationRole.CHIEF` durch `ConversationRole.NPC`
 5. Build mit `Set-Location "C:\Users\ajsch\OneDrive\Documents\Coding\Minecraft\VillagerAI"; .\gradlew.bat compileJava`
-6. Kein Deploy nötig
+"6. Kein Deploy nötig
+
+## Notizen (Cluster-F Inventur 2025-07-21)
+
+**Status zurückgesetzt von done → in-progress.** `ConversationRole.java` enthält noch den Enum-Wert `CHIEF` (neben `PLAYER` und `NPC`). Kein Code referenziert `ConversationRole.CHIEF` mehr (Grep negativ), aber die Karte fordert explizit "CHIEF in NPC umbenennen". Das ist nicht vollständig geschehen.
+
+**Was fehlt:** `CHIEF` aus dem Enum entfernen. Build prüfen. Da keine Referenzen existieren, ist das ein sicherer 2-Minuten-Fix.
+
+**Zugeordnet zu Cluster B (Rollenmodell).**"

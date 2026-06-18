@@ -5,6 +5,9 @@ import de.ajsch.villagerai.model.Quest;
 import de.ajsch.villagerai.model.QuestType;
 import de.ajsch.villagerai.model.VillagePerimeter;
 import de.ajsch.villagerai.model.VillagerContext;
+import de.ajsch.villagerai.model.ChiefAttributes;
+import de.ajsch.villagerai.storage.ChiefRepository;
+import de.ajsch.villagerai.service.ReputationService;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -31,10 +34,14 @@ public final class QuestOfferService {
     private final VillageIdentityService villageIdentityService;
     private final VillagePerimeterService villagePerimeterService;
     private final DarkBlockCache darkBlockCache;
+    private final ChiefRepository chiefRepository;
+    private final ReputationService reputationService;
     private volatile int subAreaSize;
     private volatile int minDarkBlocks;
     private volatile Map<String, List<OfferTemplate>> templatesByProfession;
     private volatile List<OfferTemplate> defaultTemplates;
+    private volatile List<OfferTemplate> retinueTemplates;
+    private volatile List<OfferTemplate> legendaryTemplates;
 
     public QuestOfferService(
             Logger logger,
@@ -44,6 +51,8 @@ public final class QuestOfferService {
             VillageIdentityService villageIdentityService,
             VillagePerimeterService villagePerimeterService,
             DarkBlockCache darkBlockCache,
+            ChiefRepository chiefRepository,
+            ReputationService reputationService,
             int subAreaSize,
             int minDarkBlocks) {
         this.logger = logger;
@@ -52,6 +61,8 @@ public final class QuestOfferService {
         this.villageIdentityService = villageIdentityService;
         this.villagePerimeterService = villagePerimeterService;
         this.darkBlockCache = darkBlockCache;
+        this.chiefRepository = chiefRepository;
+        this.reputationService = reputationService;
         this.subAreaSize = Math.max(10, subAreaSize);
         this.minDarkBlocks = Math.max(1, minDarkBlocks);
         reloadTemplates(templatesSection);
@@ -72,7 +83,16 @@ public final class QuestOfferService {
         String profession = villagerContext.profession() == null
                 ? "NONE"
                 : villagerContext.profession().toUpperCase(Locale.ROOT);
-        List<OfferTemplate> templates = templatesByProfession.getOrDefault(profession, defaultTemplates);
+        List<OfferTemplate> templates = new ArrayList<>(templatesByProfession.getOrDefault(profession, defaultTemplates));
+
+        // RETINUE + LEGENDARY: nur fuer LEGENDARY-Chiefs zusaetzliche Templates anhaengen
+        if (isLegendaryChief(chief)) {
+            templates.addAll(retinueTemplates);
+            if (isLegendaryQuestAvailable(playerUuid, chief)) {
+                templates.addAll(legendaryTemplates);
+            }
+        }
+
         int preferredTier = questDifficultyService.getPreference(playerUuid, chief.speakerId()).preferredDifficultyTier();
         int unlockedTier = questDifficultyService.resolveUnlockedTier(villageReputationScore);
         int selectedTier = Math.min(preferredTier, unlockedTier);
@@ -86,11 +106,60 @@ public final class QuestOfferService {
         String profession = villagerContext.profession() == null
                 ? "NONE"
                 : villagerContext.profession().toUpperCase(Locale.ROOT);
-        List<OfferTemplate> templates = templatesByProfession.getOrDefault(profession, defaultTemplates);
+        List<OfferTemplate> templates = new ArrayList<>(templatesByProfession.getOrDefault(profession, defaultTemplates));
+
+        if (isLegendaryChief(chief)) {
+            templates.addAll(retinueTemplates);
+            if (isLegendaryQuestAvailable(playerUuid, chief)) {
+                templates.addAll(legendaryTemplates);
+            }
+        }
+
         List<OfferTemplate> selectedTemplates = selectTemplatesForTier(templates, questDifficultyService.clampTier(desiredTier));
         int variant = Math.floorMod(playerUuid.hashCode() ^ chief.speakerId().hashCode(), selectedTemplates.size());
         questDifficultyService.recordSuggestedTier(playerUuid, chief.speakerId(), selectedTierForTemplates(selectedTemplates));
         return selectedTemplates.get(variant).toOffer(chief, this);
+    }
+
+    private boolean isLegendaryChief(Speaker chief) {
+        return chiefRepository.findByEntityUuid(chief.entityUuid())
+                .map(ChiefAttributes::legendaryUnlocked)
+                .orElse(false);
+    }
+
+    private boolean isLegendaryQuestAvailable(UUID playerUuid, Speaker chief) {
+        Optional<ChiefAttributes> attrsOpt = chiefRepository.findByEntityUuid(chief.entityUuid());
+        if (attrsOpt.isEmpty() || !attrsOpt.get().legendaryUnlocked()) {
+            return false;
+        }
+        ChiefAttributes attrs = attrsOpt.get();
+        // Prüfe shared Cooldown: 140 Minuten
+        long cooldownMillis = 140L * 60L * 1000L;
+        if (attrs.legendaryLastActivated() > 0L
+                && System.currentTimeMillis() - attrs.legendaryLastActivated() < cooldownMillis) {
+            return false;
+        }
+        int combinedReputation = reputationService.getCombinedScore(
+                playerUuid, chief.villageId(), chief.speakerId());
+        return combinedReputation >= 100;
+    }
+
+    private void updateLegendaryLastActivated(Speaker chief) {
+        chiefRepository.findByEntityUuid(chief.entityUuid()).ifPresent(attrs -> {
+            ChiefAttributes updated = new ChiefAttributes(
+                    attrs.entityUuid(),
+                    attrs.speakerId(),
+                    attrs.villageId(),
+                    attrs.crownedAt(),
+                    attrs.mournedAt(),
+                    attrs.isActive(),
+                    attrs.visualTier(),
+                    attrs.biomeStyle(),
+                    attrs.bannerPattern(),
+                    attrs.legendaryUnlocked(),
+                    System.currentTimeMillis());
+            chiefRepository.save(updated);
+        });
     }
 
     private List<OfferTemplate> selectTemplatesForTier(List<OfferTemplate> templates, int preferredTier) {
@@ -168,6 +237,40 @@ public final class QuestOfferService {
                             offer.difficultyTier());
                 }
             case DELIVER, TALK -> questService.activateTalkQuest(player.getUniqueId(), chief, offer.title(), offer.description());
+            case RETINUE_GUARD -> questService.activateRetinueGuardQuest(
+                    player.getUniqueId(), chief, chief.entityUuid(), offer.amount(), offer.difficultyTier());
+            case RETINUE_GOLEM -> questService.activateRetinueGolemQuest(
+                    player.getUniqueId(), chief, offer.worldName(), 0, 99999, 0, 99999, offer.difficultyTier());
+            case RETINUE_WALL -> questService.activateRetinueWallQuest(
+                    player.getUniqueId(), chief, offer.worldName(), 0, 99999, 0, 99999, offer.amount(), offer.difficultyTier());
+            case RETINUE_BELL -> questService.activateRetinueBellQuest(
+                    player.getUniqueId(), chief,
+                    (double) chief.x(), (double) chief.y(), (double) chief.z(),
+                    offer.worldName(), offer.difficultyTier());
+            case LEGENDARY_DRAGON -> {
+                    Quest quest = questService.activateLegendaryDragonQuest(
+                            player.getUniqueId(), chief, offer.difficultyTier());
+                    updateLegendaryLastActivated(chief);
+                    yield quest;
+                }
+            case LEGENDARY_BLAZE -> {
+                    Quest quest = questService.activateLegendaryBlazeQuest(
+                            player.getUniqueId(), chief, offer.difficultyTier());
+                    updateLegendaryLastActivated(chief);
+                    yield quest;
+                }
+            case LEGENDARY_END -> {
+                    Quest quest = questService.activateLegendaryEndQuest(
+                            player.getUniqueId(), chief, offer.difficultyTier());
+                    updateLegendaryLastActivated(chief);
+                    yield quest;
+                }
+            case LEGENDARY_NETHER -> {
+                    Quest quest = questService.activateLegendaryNetherQuest(
+                            player.getUniqueId(), chief, offer.difficultyTier());
+                    updateLegendaryLastActivated(chief);
+                    yield quest;
+                }
         };
     }
 
@@ -425,6 +528,166 @@ public final class QuestOfferService {
                 targetKey);
     }
 
+    // ── RETINUE offer methods ───────────────────────────────────────
+
+    private QuestOffer retinueGuardOffer(Speaker chief, int durationMinutes, String intro, int difficultyTier, String label) {
+        String title = label != null ? label : "Leibwache (" + durationMinutes + " min)";
+        return new QuestOffer(
+                QuestType.RETINUE_GUARD,
+                title,
+                "Bleibe " + durationMinutes + " Minuten in der Naehe des Haeuptlings und beschuetze ihn.",
+                intro + " Willst du mich bewachen?",
+                "Gut. Bleib in meiner Naehe und halte die Augen offen.",
+                null,
+                durationMinutes,
+                null,
+                chief.world(),
+                (int) Math.round(chief.x()),
+                (int) Math.round(chief.z()),
+                32,
+                null,
+                difficultyTier,
+                "RETINUE_GUARD:" + chief.entityUuid() + ":" + durationMinutes);
+    }
+
+    private QuestOffer retinueGolemOffer(Speaker chief, String intro, int difficultyTier, String label) {
+        String title = label != null ? label : "Golem-Wache";
+        return new QuestOffer(
+                QuestType.RETINUE_GOLEM,
+                title,
+                "Erschaffe einen Eisengolem innerhalb des Dorf-Perimeters.",
+                intro + " Uebernimmst du das?",
+                "Gut. Erschaffe einen Eisengolem im Dorf und melde dich dann wieder.",
+                null,
+                1,
+                null,
+                chief.world(),
+                (int) Math.round(chief.x()),
+                (int) Math.round(chief.z()),
+                0,
+                null,
+                difficultyTier,
+                "RETINUE_GOLEM:" + chief.world());
+    }
+
+    private QuestOffer retinueWallOffer(Speaker chief, int amount, String intro, int difficultyTier, String label) {
+        String title = label != null ? label : "Mauerbau (" + amount + " Bloecke)";
+        return new QuestOffer(
+                QuestType.RETINUE_WALL,
+                title,
+                "Platziere " + amount + " Stein- oder Ziegelbloecke innerhalb des Dorf-Perimeters.",
+                intro + " Packst du mit an?",
+                "Abgemacht. Bau die Bloecke innerhalb der Dorfgrenzen und melde dich dann.",
+                null,
+                amount,
+                null,
+                chief.world(),
+                (int) Math.round(chief.x()),
+                (int) Math.round(chief.z()),
+                0,
+                null,
+                difficultyTier,
+                "RETINUE_WALL:" + chief.world());
+    }
+
+    private QuestOffer retinueBellOffer(Speaker chief, String intro, int difficultyTier, String label) {
+        String title = label != null ? label : "Glocken-Stifter";
+        return new QuestOffer(
+                QuestType.RETINUE_BELL,
+                title,
+                "Bringe eine Glocke zum Treffpunkt des Dorfes bei " + chief.displayName() + ".",
+                intro + " Bringst du uns eine Glocke?",
+                "Gut. Bringe eine Glocke her und laeute unseren Bund ein.",
+                null,
+                1,
+                null,
+                chief.world(),
+                (int) Math.round(chief.x()),
+                (int) Math.round(chief.z()),
+                0,
+                null,
+                difficultyTier,
+                "RETINUE_BELL:" + chief.world() + ":" + ((int) Math.round(chief.x())) + ":" + ((int) Math.round(chief.y())) + ":" + ((int) Math.round(chief.z())));
+    }
+
+    // ── LEGENDARY offer methods ────────────────────────────────────
+
+    private QuestOffer legendaryDragonOffer(Speaker chief, String intro, int difficultyTier) {
+        return new QuestOffer(
+                QuestType.LEGENDARY_DRAGON,
+                "Drachenjaeger",
+                "Toete den Enderdrachen, damit das Dorf endlich aufatmen kann.",
+                intro + " Stellst du dich der ultimativen Pruefung?",
+                "Der Drache wird fallen wie alle, die unser Dorf bedrohen. Geh und kehre siegreich zurueck.",
+                null,
+                1,
+                EntityType.ENDER_DRAGON,
+                chief.world(),
+                (int) Math.round(chief.x()),
+                (int) Math.round(chief.z()),
+                0,
+                null,
+                difficultyTier,
+                "LEGENDARY_DRAGON:" + chief.entityUuid());
+    }
+
+    private QuestOffer legendaryBlazeOffer(Speaker chief, String intro, int difficultyTier) {
+        return new QuestOffer(
+                QuestType.LEGENDARY_BLAZE,
+                "Lohenfaenger",
+                "Bringe 5 Lohenruten aus dem Nether und ueberreiche sie dem Haeuptling.",
+                intro + " Wagst du dich in die Festung?",
+                "Gut. Besiege die Lohen im Nether und bring mir 5 Ruten als Beweis.",
+                Material.BLAZE_ROD,
+                5,
+                null,
+                chief.world(),
+                (int) Math.round(chief.x()),
+                (int) Math.round(chief.z()),
+                0,
+                null,
+                difficultyTier,
+                "LEGENDARY_BLAZE:" + chief.entityUuid() + ":5");
+    }
+
+    private QuestOffer legendaryEndOffer(Speaker chief, String intro, int difficultyTier) {
+        return new QuestOffer(
+                QuestType.LEGENDARY_END,
+                "End-Trophae",
+                "Bringe eine Shulker-Schale oder Elytra aus dem End und ueberreiche sie dem Haeuptling.",
+                intro + " Kehrst du aus der End-Dimension zurueck?",
+                "Gut. Eine Trophae aus dem End wird unser Dorf schmuecken.",
+                null,
+                1,
+                null,
+                chief.world(),
+                (int) Math.round(chief.x()),
+                (int) Math.round(chief.z()),
+                0,
+                null,
+                difficultyTier,
+                "LEGENDARY_END:" + chief.entityUuid());
+    }
+
+    private QuestOffer legendaryNetherOffer(Speaker chief, String intro, int difficultyTier) {
+        return new QuestOffer(
+                QuestType.LEGENDARY_NETHER,
+                "Nether-Beute",
+                "Bringe einen Nether-Stern oder Wither-Skelett-Schaedel und ueberreiche ihn dem Haeuptling.",
+                intro + " Beugst du dich den Tiefen der Hoelle?",
+                "Gut. Holt die wertvollste Beute aus den feurigen Tiefen.",
+                null,
+                1,
+                null,
+                chief.world(),
+                (int) Math.round(chief.x()),
+                (int) Math.round(chief.z()),
+                0,
+                null,
+                difficultyTier,
+                "LEGENDARY_NETHER:" + chief.entityUuid());
+    }
+
     private Villager findVillagerBySpeakerUuid(UUID entityUuid) {
         for (org.bukkit.World world : org.bukkit.Bukkit.getWorlds()) {
             for (Villager villager : world.getEntitiesByClass(Villager.class)) {
@@ -451,8 +714,12 @@ public final class QuestOfferService {
     private QuestOfferTemplateConfig loadTemplates(ConfigurationSection templatesSection) {
         Map<String, List<OfferTemplate>> templatesByProfession = new HashMap<>();
         List<OfferTemplate> configuredDefaultTemplates = new ArrayList<>();
+        List<OfferTemplate> configuredRetinueTemplates = new ArrayList<>();
+        List<OfferTemplate> configuredLegendaryTemplates = new ArrayList<>();
         if (templatesSection == null) {
             logger.warning("quest-offers.yml fehlt oder enthaelt keine 'offer-templates'-Sektion. Nutze Notfall-Default fuer Questangebote.");
+            this.retinueTemplates = configuredRetinueTemplates;
+            this.legendaryTemplates = configuredLegendaryTemplates;
             return emergencyTemplateConfig();
         }
 
@@ -466,10 +733,17 @@ public final class QuestOfferService {
             String normalizedKey = key.toUpperCase(Locale.ROOT);
             if ("DEFAULT".equals(normalizedKey)) {
                 configuredDefaultTemplates = templates;
+            } else if ("RETINUE".equals(normalizedKey)) {
+                configuredRetinueTemplates = templates;
+            } else if ("LEGENDARY".equals(normalizedKey)) {
+                configuredLegendaryTemplates = templates;
             } else {
                 templatesByProfession.put(normalizedKey, templates);
             }
         }
+
+        this.retinueTemplates = configuredRetinueTemplates;
+        this.legendaryTemplates = configuredLegendaryTemplates;
 
         if (configuredDefaultTemplates.isEmpty()) {
             logger.warning("quest-offers.yml enthaelt keine gueltigen DEFAULT-Angebote. Nutze einen schmalen Notfall-Default.");
@@ -576,7 +850,22 @@ public final class QuestOfferService {
                     logger.warning("SECURE-Template in '" + scopeName + "' ignoriert: gueltiges Block-Material, amount > 0, distance > 0 und radius > 0 sind Pflicht.");
                     yield null;
                 }
-                yield new OfferTemplate(type, intro, material, null, amount, distance, radius, null, Math.max(0, intValue(rawEntry.get("difficulty-tier"), 0)), mode);
+                yield new OfferTemplate(type, intro, material, null, amount, distance, radius, null, Math.max(0, intValue(rawEntry.get("difficulty-tier"), 0)), mode, 0, null);
+            }
+            case RETINUE_GUARD, RETINUE_GOLEM, RETINUE_WALL, RETINUE_BELL -> {
+                String mode = stringValue(rawEntry.get("mode"));
+                String label = stringValue(rawEntry.get("label"));
+                int amount = intValue(rawEntry.get("amount"), 1);
+                int guardMinutes = intValue(rawEntry.get("guard-minutes"), 10);
+                int cooldownMinutes = intValue(rawEntry.get("cooldown-minutes"), 2880);
+                int difficultyTier = Math.max(0, intValue(rawEntry.get("difficulty-tier"), 5));
+                yield new OfferTemplate(type, intro, null, null, type == QuestType.RETINUE_GUARD ? guardMinutes : amount, 0, 0, null, difficultyTier, mode, cooldownMinutes, label);
+            }
+            case LEGENDARY_DRAGON, LEGENDARY_BLAZE, LEGENDARY_END, LEGENDARY_NETHER -> {
+                int amount = intValue(rawEntry.get("amount"), 1);
+                int cooldownMinutes = intValue(rawEntry.get("cooldown-minutes"), 140);
+                int difficultyTier = Math.max(0, intValue(rawEntry.get("difficulty-tier"), 5));
+                yield new OfferTemplate(type, intro, null, null, amount, 0, 0, null, difficultyTier, null, cooldownMinutes, null);
             }
             default -> null;
         };
@@ -651,11 +940,13 @@ public final class QuestOfferService {
             int radius,
             PotionType potionType,
             int difficultyTier,
-            String mode) {
+            String mode,
+            int cooldownMinutes,
+            String label) {
 
         private OfferTemplate(QuestType type, String intro, Material material, EntityType entityType,
                 int amount, int distance, int radius, PotionType potionType, int difficultyTier) {
-            this(type, intro, material, entityType, amount, distance, radius, potionType, difficultyTier, null);
+            this(type, intro, material, entityType, amount, distance, radius, potionType, difficultyTier, null, 0, null);
         }
 
         private QuestOffer toOffer(Speaker chief, QuestOfferService service) {
@@ -674,6 +965,14 @@ public final class QuestOfferService {
                     }
                     yield service.secureOffer(chief, material, amount, distance, radius, intro, difficultyTier);
                 }
+                case RETINUE_GUARD -> service.retinueGuardOffer(chief, amount, intro, difficultyTier, label);
+                case RETINUE_GOLEM -> service.retinueGolemOffer(chief, intro, difficultyTier, label);
+                case RETINUE_WALL -> service.retinueWallOffer(chief, amount, intro, difficultyTier, label);
+                case RETINUE_BELL -> service.retinueBellOffer(chief, intro, difficultyTier, label);
+                case LEGENDARY_DRAGON -> service.legendaryDragonOffer(chief, intro, difficultyTier);
+                case LEGENDARY_BLAZE -> service.legendaryBlazeOffer(chief, intro, difficultyTier);
+                case LEGENDARY_END -> service.legendaryEndOffer(chief, intro, difficultyTier);
+                case LEGENDARY_NETHER -> service.legendaryNetherOffer(chief, intro, difficultyTier);
                 default -> service.fetchOffer(Material.BREAD, 8, intro, chief, difficultyTier);
             };
         }

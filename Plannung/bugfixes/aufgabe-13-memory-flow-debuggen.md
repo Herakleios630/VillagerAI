@@ -2,7 +2,7 @@
 title: "Arbeitsauftrag: Memory-Flow Debug-Logging und Live-Analyse"
 quelle: "Ad-hoc – Antworten nach Memory-Fixes weiterhin generisch"
 created: "2025-06-14"
-status: ready
+status: done
 ---
 
 # Arbeitsauftrag: Memory-Flow Debug-Logging und Live-Analyse

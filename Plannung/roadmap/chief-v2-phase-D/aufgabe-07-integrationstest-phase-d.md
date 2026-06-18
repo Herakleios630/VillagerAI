@@ -4,7 +4,7 @@ quelle: "roadmap.md → Chief_V2, Phase D"
 related-roadmap: "Plannung/roadmap.md"
 created: "2025-07-20"
 updated: "2025-07-21"
-status: in-progress
+status: todo
 ---
 
 # Arbeitsauftrag: Phase-D Integrationstest

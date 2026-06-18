@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: http_app.py MC-Felder entgegennehmen"
 quelle: "roadmap-memory.md → Phase 4b, Aufgabe 4b-4"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4b"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: http_app.py MC-Felder entgegennehmen

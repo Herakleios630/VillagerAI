@@ -186,7 +186,7 @@ Chiefs merken sich frühere Interaktionen.
 - [x] zusammengefasste Memory-Struktur vorbereiten
 - [x] Embedding-Suche für Trigger-Phrasen (Basisversion, 4a-8b)
 - [ ] Embedding-Suche verbessern: archivierte Turns + Summary-Embeddings durchsuchen (Ansätze A+B, siehe `Plannung/ad-hoc/embedding-suche-verbessern-ansatz-a-b.md`)
-"- [ ] Nachgelagert: Query-basierte Minisummaries (Ansatz C) – bei Trigger-Fragen die relevantesten Turns/Summaries per Embedding finden und ein query-spezifisches Kurzsummary generieren, um semantisch entfernte aber logisch zusammenhängende Informationen auffindbar zu machen
+- [ ] Nachgelagert: Query-basierte Minisummaries (Ansatz C) – bei Trigger-Fragen die relevantesten Turns/Summaries per Embedding finden und ein query-spezifisches Kurzsummary generieren, um semantisch entfernte aber logisch zusammenhängende Informationen auffindbar zu machen
 - [x] **Memory v2 – Faktenbasiertes Langzeitgedächtnis** (2026-06-13, 8 Arbeitskarten: A–H)
   - [x] Aufgabe A: Datenbank-Schema (`player_facts` + FTS5)
   - [x] Aufgabe B: Async-Worker-Queue (`worker.py`)
@@ -676,38 +676,38 @@ Dieser Block ist bewusst nachgelagert und soll erst folgen, wenn Dialog, Questfl
 - [x] `ChiefRepository.saveChief()` – `chiefs.yml` schreibend machen (Plugin schreibt, nicht manuell editieren)
 - [x] Dorf-Wappen: deterministisches Banner-Muster aus `villageId.hashCode()` ableiten
 - [x] Krönungs-Partikel: neuer Chief trägt ersten Tag (20 Min) goldene Dust/DustTransition-Partikel
-- [ ] `ReputationChangedEvent` als technisches Fundament einführen
-- [ ] `/chief info` zeigt aktuellen Chief des Dorfes an (auch ohne Argumente)
-- [ ] Test: Serverstart → jedes Dorf hat Chief mit Banner
+- [x] `ReputationChangedEvent` als technisches Fundament einführen
+- [x] `/chief info` zeigt aktuellen Chief des Dorfes an (auch ohne Argumente)
+- [x] Test: Serverstart → jedes Dorf hat Chief mit Banner
 
 ### Phase B: Tod, Trauer & Nachfolge
-- [ ] `ChiefDeathHandler` – `EntityDeathEvent` für Chief-Tod und `/chief unset` abfangen
-- [ ] Erbstück-Drop: toter Chief droppt Banner-Item mit Wappen + Rangstufen-Muster + Lore-Text
-- [ ] Trauerphase (3 Ingame-Tage / 60 Min): kein Chief, Dorf-Ruf=0, keine Quests, Trauer-Dialoge
+- [x] `ChiefDeathHandler` – `EntityDeathEvent` für Chief-Tod und `/chief unset` abfangen
+- [x] Erbstück-Drop: toter Chief droppt Banner-Item mit Wappen + Rangstufen-Muster + Lore-Text
+- [x] Trauerphase (3 Ingame-Tage / 60 Min): kein Chief, Dorf-Ruf=0, keine Quests, Trauer-Dialoge
 - [x] Trauer-Flora: dezente dunkle Dust-Partikel ziehen tagsüber durchs Dorf
 - [x] Bridge-seitige Trauer-Instruktion: `village_has_chief: false`, `village_mourning: true` im AI-Request + Prompt-Erweiterung
 - [x] Nachfolger-Auswahl nach Trauerphase: niedrigste UUID unter lebenden Villagern der `villageId`
 - [x] Ruf-Reset bei Tod/Unset: alle `reputation.yml`-Einträge der `speakerId` löschen
-- [ ] Chat-Durchsagen für Tod ("Der Häuptling ist gefallen...") und Krönung ("Ein neuer Häuptling erhebt sich...")
-- [ ] `ChiefMeetingObserver` – optionale Krönungs-Feuerwerk am Meeting-Point (>50% Villager versammelt)
-- [ ] Edge Cases: Chief-Tod in Nether/End, Admin `/chief set` während Trauerphase, kein lebender Villager im Dorf
-- [ ] Test: Chief töten oder `/chief unset` → 3 Tage Trauer → neuer Chief
+- [x] Chat-Durchsagen für Tod ("Der Häuptling ist gefallen...") und Krönung ("Ein neuer Häuptling erhebt sich...")
+- [x] `ChiefMeetingObserver` – optionale Krönungs-Feuerwerk am Meeting-Point (>50% Villager versammelt)
+- [x] Edge Cases: Chief-Tod in Nether/End, Admin `/chief set` während Trauerphase, kein lebender Villager im Dorf
+- [x] Test: Chief töten oder `/chief unset` → 3 Tage Trauer → neuer Chief
 
 ### Phase C: Rangstufen-Looks + Wappen-Interaktion
-- [ ] `ChiefVisualTier` Enum (TIER_0..3, LEGENDARY) mit Ruf-Schwellen 0/25/50/75/100
-- [ ] Banner-Pattern-Komplexität pro Stufe: schlicht → verfeinert → aufwändig → Elite
-- [ ] Equipment-Slot für Brustplatte (Leder, gefärbt) pro Rangstufe
-- [ ] `ChiefVisualService` reagiert auf `ReputationChangedEvent` → Live-Updates bei Rufsprüngen
-- [ ] Wappen-Kopie: Rechtsklick auf Chief (bei hohem Ruf) gibt Banner-Item mit Dorf-Wappen
-- [ ] Test: Ruf ändern → Banner und Kleidung upgraden live
+- [x] `ChiefVisualTier` Enum (TIER_0..3, LEGENDARY) mit Ruf-Schwellen 0/25/50/75/100
+- [x] Banner-Pattern-Komplexität pro Stufe: schlicht → verfeinert → aufwändig → Elite
+- [x] Equipment-Slot für Brustplatte (Leder, gefärbt) pro Rangstufe
+- [x] `ChiefVisualService` reagiert auf `ReputationChangedEvent` → Live-Updates bei Rufsprüngen
+- [x] Wappen-Kopie: Rechtsklick auf Chief (bei hohem Ruf) gibt Banner-Item mit Dorf-Wappen
+- [x] Test: Ruf ändern → Banner und Kleidung upgraden live
 
 ### Phase D: Biome-Paletten + Legendary-Form + Gefolge-Quests
-- [ ] `BiomeStyle`-Mapping: pro Biom-Familie (Plains, Taiga, Desert, Swamp, Savanna) eigene Farb- und Materialwelt
-- [ ] Biome-Look beeinflusst Banner-Palette, Stofffarbe und Detailmaterialien
-- [ ] Legendary-Freischaltlogik: Dorf- + Villager-Ruf 100/100 + Welt-Fortschritts-Flags
-- [ ] Legendary-Banner + permanente Leucht-Partikel
-- [ ] Gefolge-Quests als neue Quest-Kategorie: Leibwache, Golem-Wache, Mauerbau, Glocken-Stifter
-- [ ] Legendary-Questlinie mit exklusiven Rewards, langen Cooldowns, separater Config-Spur
+- [x] `BiomeStyle`-Mapping: pro Biom-Familie (Plains, Taiga, Desert, Swamp, Savanna) eigene Farb- und Materialwelt
+- [x] Biome-Look beeinflusst Banner-Palette, Stofffarbe und Detailmaterialien
+- [x] Legendary-Freischaltlogik: Dorf- + Villager-Ruf 100/100 + Welt-Fortschritts-Flags
+- [x] Legendary-Banner + permanente Leucht-Partikel
+- [x] Gefolge-Quests als neue Quest-Kategorie: Leibwache, Golem-Wache, Mauerbau, Glocken-Stifter
+- [x] Legendary-Questlinie mit exklusiven Rewards, langen Cooldowns, separater Config-Spur
 
 ### Zurückgestellt
 - [ ] Idee 4: Saisonale Event-Mode-Chiefs (Halloween/Weihnachten)

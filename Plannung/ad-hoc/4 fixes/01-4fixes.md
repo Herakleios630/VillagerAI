@@ -2,7 +2,7 @@
 title: "Arbeitsauftrag: villagerType + biome als Plain-String übergeben"
 quelle: "Ad-hoc → Log-Analyse Prompt-Redesign"
 created: "2025-12-18"
-status: in-progress
+status: obsolet
 ---
 
 # Arbeitsauftrag: villagerType + biome als Plain-String übergeben

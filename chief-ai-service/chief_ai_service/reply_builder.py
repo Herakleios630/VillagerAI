@@ -23,7 +23,7 @@ def _load_memory_context(payload: dict, config: dict) -> tuple[list[dict], str |
     memory_enabled = bool(memory_cfg.get("enabled")) if isinstance(memory_cfg, dict) else False
 
     player_uuid = str(payload.get("playerUuid", "")).strip()
-    chief_name = str(payload.get("chiefName", "Haeuptling")).strip()
+    chief_name = str(payload.get("displayName", "Dorfbewohner")).strip()
     player_message = str(payload.get("playerMessage", "")).strip()
     logger.info(
         "_load_memory_context start: player_uuid=%s chief_name=%s message='%s' memory.enabled=%s",

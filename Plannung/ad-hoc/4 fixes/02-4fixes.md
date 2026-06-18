@@ -2,7 +2,7 @@
 title: "Arbeitsauftrag: relationshipMemory-Text für Erstkontakt präzisieren"
 quelle: "Ad-hoc → Log-Analyse Prompt-Redesign"
 created: "2025-12-18"
-status: in-progress
+status: obsolet
 ---
 
 # Arbeitsauftrag: relationshipMemory-Text für Erstkontakt präzisieren

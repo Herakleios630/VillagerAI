@@ -3,7 +3,7 @@ title: \"Arbeitsauftrag: Deployment und Integrationstest\"
 quelle: \"Ad-hoc – Doppel-Chief-Analyse, Village-ID-Stabilisierung\"
 related-roadmap: \"N/A\"
 created: \"2025-07-21\"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Deployment und Integrationstest (08/08)

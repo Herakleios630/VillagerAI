@@ -53,7 +53,9 @@ public final class VillagerContextService {
                 formatLocation(home),
                 formatLocation(jobSite),
                 formatLocation(potentialJobSite),
-                formatLocation(meetingPoint));
+                formatLocation(meetingPoint),
+                world.getFullTime() / 24000,
+                world.getTime());
     }
 
     private String buildAuthoritativeWorldFacts(

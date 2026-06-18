@@ -9,6 +9,7 @@ import de.ajsch.villagerai.model.VillagePerimeter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -1261,6 +1262,439 @@ public final class QuestService {
             long remainingSeconds,
             String failureMessage) {
     }
+
+    // ── RETINUE quests ──────────────────────────────────────────────
+
+    public Quest activateRetinueGuardQuest(UUID playerUuid, Speaker chief, UUID chiefEntityUuid, int durationMinutes, int difficultyTier) {
+        long now = System.currentTimeMillis();
+        String targetKey = "RETINUE_GUARD:" + chiefEntityUuid + ":" + durationMinutes;
+        Quest quest = new Quest(
+                createQuestId(),
+                playerUuid,
+                chief.speakerId(),
+                chief.villageId(),
+                Math.max(0, difficultyTier),
+                QuestType.RETINUE_GUARD,
+                "Leibwache (" + durationMinutes + " min)",
+                "Bleibe " + durationMinutes + " Minuten in der Naehe des Haeuptlings und beschuetze ihn.",
+                targetKey,
+                durationMinutes,
+                0,
+                QuestStatus.ACTIVE,
+                now,
+                now);
+        questRepository.saveQuest(quest);
+        return quest;
+    }
+
+    public Quest activateRetinueGolemQuest(UUID playerUuid, Speaker chief, String worldName, int perimeterMinX, int perimeterMaxX, int perimeterMinZ, int perimeterMaxZ, int difficultyTier) {
+        long now = System.currentTimeMillis();
+        String targetKey = "RETINUE_GOLEM:" + worldName + ":" + perimeterMinX + ":" + perimeterMaxX + ":" + perimeterMinZ + ":" + perimeterMaxZ;
+        Quest quest = new Quest(
+                createQuestId(),
+                playerUuid,
+                chief.speakerId(),
+                chief.villageId(),
+                Math.max(0, difficultyTier),
+                QuestType.RETINUE_GOLEM,
+                "Golem-Wache",
+                "Erschaffe einen Eisengolem innerhalb des Dorf-Perimeters.",
+                targetKey,
+                1,
+                0,
+                QuestStatus.ACTIVE,
+                now,
+                now);
+        questRepository.saveQuest(quest);
+        return quest;
+    }
+
+    public Quest activateRetinueWallQuest(UUID playerUuid, Speaker chief, String worldName, int perimeterMinX, int perimeterMaxX, int perimeterMinZ, int perimeterMaxZ, int amount, int difficultyTier) {
+        long now = System.currentTimeMillis();
+        String targetKey = "RETINUE_WALL:" + worldName + ":" + perimeterMinX + ":" + perimeterMaxX + ":" + perimeterMinZ + ":" + perimeterMaxZ;
+        Quest quest = new Quest(
+                createQuestId(),
+                playerUuid,
+                chief.speakerId(),
+                chief.villageId(),
+                Math.max(0, difficultyTier),
+                QuestType.RETINUE_WALL,
+                "Mauerbau (" + amount + " Bloecke)",
+                "Platziere " + amount + " Stein- oder Ziegelbloecke innerhalb des Dorf-Perimeters.",
+                targetKey,
+                amount,
+                0,
+                QuestStatus.ACTIVE,
+                now,
+                now);
+        questRepository.saveQuest(quest);
+        return quest;
+    }
+
+    public Quest activateRetinueBellQuest(UUID playerUuid, Speaker chief, double targetX, double targetY, double targetZ, String worldName, int difficultyTier) {
+        long now = System.currentTimeMillis();
+        String targetKey = "RETINUE_BELL:" + worldName + ":" + ((int) targetX) + ":" + ((int) targetY) + ":" + ((int) targetZ);
+        Quest quest = new Quest(
+                createQuestId(),
+                playerUuid,
+                chief.speakerId(),
+                chief.villageId(),
+                Math.max(0, difficultyTier),
+                QuestType.RETINUE_BELL,
+                "Glocken-Stifter",
+                "Bringe eine Glocke zum Treffpunkt des Dorfes (X=" + ((int) targetX) + ", Z=" + ((int) targetZ) + ").",
+                targetKey,
+                1,
+                0,
+                QuestStatus.ACTIVE,
+                now,
+                now);
+        questRepository.saveQuest(quest);
+                return quest;
+            }
+
+            // ── LEGENDARY quests ───────────────────────────────────────────
+
+            public Quest activateLegendaryDragonQuest(UUID playerUuid, Speaker chief, int difficultyTier) {
+                long now = System.currentTimeMillis();
+                String targetKey = "LEGENDARY_DRAGON:" + chief.entityUuid();
+                Quest quest = new Quest(
+                        createQuestId(),
+                        playerUuid,
+                        chief.speakerId(),
+                        chief.villageId(),
+                        Math.max(0, difficultyTier),
+                        QuestType.LEGENDARY_DRAGON,
+                        "Drachenjaeger",
+                        "Toete den Enderdrachen und kehre zum Haeuptling zurueck.",
+                        targetKey,
+                        1,
+                        0,
+                        QuestStatus.ACTIVE,
+                        now,
+                        now);
+                questRepository.saveQuest(quest);
+                return quest;
+            }
+
+            public Quest activateLegendaryBlazeQuest(UUID playerUuid, Speaker chief, int difficultyTier) {
+                long now = System.currentTimeMillis();
+                String targetKey = "LEGENDARY_BLAZE:" + chief.entityUuid() + ":5";
+                Quest quest = new Quest(
+                        createQuestId(),
+                        playerUuid,
+                        chief.speakerId(),
+                        chief.villageId(),
+                        Math.max(0, difficultyTier),
+                        QuestType.LEGENDARY_BLAZE,
+                        "Lohenfaenger",
+                        "Bringe 5 Lohenruten aus dem Nether und ueberreiche sie dem Haeuptling.",
+                        targetKey,
+                        5,
+                        0,
+                        QuestStatus.ACTIVE,
+                        now,
+                        now);
+                questRepository.saveQuest(quest);
+                return quest;
+            }
+
+            public Quest activateLegendaryEndQuest(UUID playerUuid, Speaker chief, int difficultyTier) {
+                long now = System.currentTimeMillis();
+                String targetKey = "LEGENDARY_END:" + chief.entityUuid();
+                Quest quest = new Quest(
+                        createQuestId(),
+                        playerUuid,
+                        chief.speakerId(),
+                        chief.villageId(),
+                        Math.max(0, difficultyTier),
+                        QuestType.LEGENDARY_END,
+                        "End-Trophae",
+                        "Bringe eine Shulker-Schale oder Elytra aus dem End und ueberreiche sie dem Haeuptling.",
+                        targetKey,
+                        1,
+                        0,
+                        QuestStatus.ACTIVE,
+                        now,
+                        now);
+                questRepository.saveQuest(quest);
+                return quest;
+            }
+
+            public Quest activateLegendaryNetherQuest(UUID playerUuid, Speaker chief, int difficultyTier) {
+                long now = System.currentTimeMillis();
+                String targetKey = "LEGENDARY_NETHER:" + chief.entityUuid();
+                Quest quest = new Quest(
+                        createQuestId(),
+                        playerUuid,
+                        chief.speakerId(),
+                        chief.villageId(),
+                        Math.max(0, difficultyTier),
+                        QuestType.LEGENDARY_NETHER,
+                        "Nether-Beute",
+                        "Bringe einen Nether-Stern oder Wither-Skelett-Schaedel und ueberreiche ihn dem Haeuptling.",
+                        targetKey,
+                        1,
+                        0,
+                        QuestStatus.ACTIVE,
+                        now,
+                        now);
+                questRepository.saveQuest(quest);
+                        return quest;
+                    }
+
+                    // ── LEGENDARY quest completion handlers ───────────────────────
+
+                    public Collection<KillQuestUpdate> advanceLegendaryDragonQuests(Player player, EntityType killedType) {
+                        if (killedType != EntityType.ENDER_DRAGON) {
+                            return List.of();
+                        }
+                        long now = System.currentTimeMillis();
+                        Collection<KillQuestUpdate> updates = new ArrayList<>();
+                        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+                            if (quest.type() != QuestType.LEGENDARY_DRAGON || quest.status() != QuestStatus.ACTIVE) {
+                                continue;
+                            }
+                            Quest updatedQuest = quest.withProgress(quest.goal(), now);
+                            questRepository.saveQuest(updatedQuest);
+                            updates.add(new KillQuestUpdate(updatedQuest, true));
+                        }
+                        return updates;
+                    }
+
+                    public Collection<BrewQuestUpdate> completeLegendaryBlazeQuests(Player player, String speakerId) {
+                        long now = System.currentTimeMillis();
+                        Collection<BrewQuestUpdate> updates = new ArrayList<>();
+                        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+                            if (quest.type() != QuestType.LEGENDARY_BLAZE
+                                    || quest.status() != QuestStatus.ACTIVE
+                                    || !quest.speakerId().equals(speakerId)) {
+                                continue;
+                            }
+                            int remainingAmount = Math.max(0, quest.goal() - quest.progress());
+                            if (remainingAmount <= 0) {
+                                Quest updatedQuest = quest.withStatus(QuestStatus.COMPLETED, now);
+                                questRepository.saveQuest(updatedQuest);
+                                updates.add(new BrewQuestUpdate(updatedQuest, 0, true));
+                                continue;
+                            }
+                            int handedIn = removeMaterial(player, Material.BLAZE_ROD, remainingAmount);
+                            if (handedIn <= 0) {
+                                continue;
+                            }
+                            int newProgress = Math.min(quest.goal(), quest.progress() + handedIn);
+                            Quest updatedQuest = quest.withProgress(newProgress, now);
+                            boolean completed = newProgress >= quest.goal();
+                            if (completed) {
+                                updatedQuest = updatedQuest.withStatus(QuestStatus.COMPLETED, now);
+                            }
+                            questRepository.saveQuest(updatedQuest);
+                            updates.add(new BrewQuestUpdate(updatedQuest, handedIn, completed));
+                        }
+                        return updates;
+                    }
+
+                    public Collection<BrewQuestUpdate> completeLegendaryEndQuests(Player player, String speakerId) {
+                        long now = System.currentTimeMillis();
+                        Collection<BrewQuestUpdate> updates = new ArrayList<>();
+                        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+                            if (quest.type() != QuestType.LEGENDARY_END
+                                    || quest.status() != QuestStatus.ACTIVE
+                                    || !quest.speakerId().equals(speakerId)) {
+                                continue;
+                            }
+                            int remainingAmount = Math.max(0, quest.goal() - quest.progress());
+                            if (remainingAmount <= 0) {
+                                Quest updatedQuest = quest.withStatus(QuestStatus.COMPLETED, now);
+                                questRepository.saveQuest(updatedQuest);
+                                updates.add(new BrewQuestUpdate(updatedQuest, 0, true));
+                                continue;
+                            }
+                            int handedInShulker = removeMaterial(player, Material.SHULKER_SHELL, remainingAmount);
+                            int handedInElytra = removeMaterial(player, Material.ELYTRA, remainingAmount - handedInShulker);
+                            int handedIn = handedInShulker + handedInElytra;
+                            if (handedIn <= 0) {
+                                continue;
+                            }
+                            int newProgress = Math.min(quest.goal(), quest.progress() + handedIn);
+                            Quest updatedQuest = quest.withProgress(newProgress, now);
+                            boolean completed = newProgress >= quest.goal();
+                            if (completed) {
+                                updatedQuest = updatedQuest.withStatus(QuestStatus.COMPLETED, now);
+                            }
+                            questRepository.saveQuest(updatedQuest);
+                            updates.add(new BrewQuestUpdate(updatedQuest, handedIn, completed));
+                        }
+                        return updates;
+                    }
+
+                    public Collection<BrewQuestUpdate> completeLegendaryNetherQuests(Player player, String speakerId) {
+                        long now = System.currentTimeMillis();
+                        Collection<BrewQuestUpdate> updates = new ArrayList<>();
+                        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+                            if (quest.type() != QuestType.LEGENDARY_NETHER
+                                    || quest.status() != QuestStatus.ACTIVE
+                                    || !quest.speakerId().equals(speakerId)) {
+                                continue;
+                            }
+                            int remainingAmount = Math.max(0, quest.goal() - quest.progress());
+                            if (remainingAmount <= 0) {
+                                Quest updatedQuest = quest.withStatus(QuestStatus.COMPLETED, now);
+                                questRepository.saveQuest(updatedQuest);
+                                updates.add(new BrewQuestUpdate(updatedQuest, 0, true));
+                                continue;
+                            }
+                            int handedInStar = removeMaterial(player, Material.NETHER_STAR, remainingAmount);
+                            int handedInSkull = removeMaterial(player, Material.WITHER_SKELETON_SKULL, remainingAmount - handedInStar);
+                            int handedIn = handedInStar + handedInSkull;
+                            if (handedIn <= 0) {
+                                continue;
+                            }
+                            int newProgress = Math.min(quest.goal(), quest.progress() + handedIn);
+                            Quest updatedQuest = quest.withProgress(newProgress, now);
+                            boolean completed = newProgress >= quest.goal();
+                            if (completed) {
+                                updatedQuest = updatedQuest.withStatus(QuestStatus.COMPLETED, now);
+                            }
+                            questRepository.saveQuest(updatedQuest);
+                            updates.add(new BrewQuestUpdate(updatedQuest, handedIn, completed));
+                        }
+                        return updates;
+                    }
+
+                    public Collection<RetinueGuardUpdate> advanceRetinueGuardQuests(Player player, UUID chiefEntityUuid) {
+        long now = System.currentTimeMillis();
+        Collection<RetinueGuardUpdate> updates = new ArrayList<>();
+        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+            if (quest.type() != QuestType.RETINUE_GUARD || quest.status() != QuestStatus.ACTIVE) {
+                continue;
+            }
+            String[] parts = quest.targetKey().split(":");
+            if (parts.length < 3 || !parts[1].equals(chiefEntityUuid.toString())) {
+                continue;
+            }
+            int newProgress = Math.min(quest.goal(), quest.progress() + 1);
+            Quest updatedQuest = quest.withProgress(newProgress, now);
+            questRepository.saveQuest(updatedQuest);
+            updates.add(new RetinueGuardUpdate(updatedQuest, newProgress >= quest.goal()));
+        }
+        return updates;
+    }
+
+    public Collection<RetinueGolemUpdate> advanceRetinueGolemQuests(Player player, Location createdLocation) {
+        long now = System.currentTimeMillis();
+        Collection<RetinueGolemUpdate> updates = new ArrayList<>();
+        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+            if (quest.type() != QuestType.RETINUE_GOLEM || quest.status() != QuestStatus.ACTIVE) {
+                continue;
+            }
+            // targetKey: RETINUE_GOLEM:worldName:minX:maxX:minZ:maxZ
+            String[] parts = quest.targetKey().split(":");
+            if (parts.length < 6 || !parts[1].equalsIgnoreCase(createdLocation.getWorld().getName())) {
+                continue;
+            }
+            try {
+                int minX = Integer.parseInt(parts[2]);
+                int maxX = Integer.parseInt(parts[3]);
+                int minZ = Integer.parseInt(parts[4]);
+                int maxZ = Integer.parseInt(parts[5]);
+                int bx = createdLocation.getBlockX();
+                int bz = createdLocation.getBlockZ();
+                if (bx < minX || bx > maxX || bz < minZ || bz > maxZ) {
+                    continue;
+                }
+                Quest updatedQuest = quest.withProgress(quest.goal(), now);
+                questRepository.saveQuest(updatedQuest);
+                updates.add(new RetinueGolemUpdate(updatedQuest, true));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return updates;
+    }
+
+    public Collection<RetinueWallUpdate> advanceRetinueWallQuests(Player player, Material placedMaterial, Location placedLocation) {
+        long now = System.currentTimeMillis();
+        Collection<RetinueWallUpdate> updates = new ArrayList<>();
+        // Only count stone-like blocks
+        if (!isStoneOrBrick(placedMaterial)) {
+            return updates;
+        }
+        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+            if (quest.type() != QuestType.RETINUE_WALL || quest.status() != QuestStatus.ACTIVE) {
+                continue;
+            }
+            // targetKey: RETINUE_WALL:worldName:minX:maxX:minZ:maxZ
+            String[] parts = quest.targetKey().split(":");
+            if (parts.length < 6 || !parts[1].equalsIgnoreCase(placedLocation.getWorld().getName())) {
+                continue;
+            }
+            try {
+                int minX = Integer.parseInt(parts[2]);
+                int maxX = Integer.parseInt(parts[3]);
+                int minZ = Integer.parseInt(parts[4]);
+                int maxZ = Integer.parseInt(parts[5]);
+                int bx = placedLocation.getBlockX();
+                int bz = placedLocation.getBlockZ();
+                if (bx < minX || bx > maxX || bz < minZ || bz > maxZ) {
+                    continue;
+                }
+                int newProgress = Math.min(quest.goal(), quest.progress() + 1);
+                Quest updatedQuest = quest.withProgress(newProgress, now);
+                questRepository.saveQuest(updatedQuest);
+                updates.add(new RetinueWallUpdate(updatedQuest, newProgress >= quest.goal()));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return updates;
+    }
+
+    private boolean isStoneOrBrick(Material material) {
+        String name = material.name();
+        return name.contains("STONE") || name.contains("BRICK") || name.contains("COBBLESTONE");
+    }
+
+    public Collection<RetinueBellUpdate> advanceRetinueBellQuests(Player player, Material placedMaterial, Location placedLocation) {
+        long now = System.currentTimeMillis();
+        Collection<RetinueBellUpdate> updates = new ArrayList<>();
+        if (placedMaterial != Material.BELL) {
+            return updates;
+        }
+        for (Quest quest : questRepository.findByPlayerUuid(player.getUniqueId())) {
+            if (quest.type() != QuestType.RETINUE_BELL || quest.status() != QuestStatus.ACTIVE) {
+                continue;
+            }
+            // targetKey: RETINUE_BELL:worldName:targetX:targetY:targetZ
+            String[] parts = quest.targetKey().split(":");
+            if (parts.length < 5 || !parts[1].equalsIgnoreCase(placedLocation.getWorld().getName())) {
+                continue;
+            }
+            try {
+                int targetX = Integer.parseInt(parts[2]);
+                int targetY = Integer.parseInt(parts[3]);
+                int targetZ = Integer.parseInt(parts[4]);
+                int bx = placedLocation.getBlockX();
+                int by = placedLocation.getBlockY();
+                int bz = placedLocation.getBlockZ();
+                // Within 2 blocks of target
+                if (Math.abs(bx - targetX) > 2 || Math.abs(by - targetY) > 2 || Math.abs(bz - targetZ) > 2) {
+                    continue;
+                }
+                Quest updatedQuest = quest.withProgress(quest.goal(), now);
+                questRepository.saveQuest(updatedQuest);
+                updates.add(new RetinueBellUpdate(updatedQuest, true));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return updates;
+    }
+
+    public record RetinueGuardUpdate(Quest quest, boolean readyToTurnIn) {}
+
+    public record RetinueGolemUpdate(Quest quest, boolean readyToTurnIn) {}
+
+    public record RetinueWallUpdate(Quest quest, boolean readyToTurnIn) {}
+
+    public record RetinueBellUpdate(Quest quest, boolean readyToTurnIn) {}
 
     public record DeliveryRequirement(Material material, int amount) {
     }

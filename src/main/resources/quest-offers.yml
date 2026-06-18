@@ -225,3 +225,48 @@ offer-templates:
       material: RABBIT_HIDE
       amount: 6
       intro: "Mir fehlen Hasenfelle fuer feine Arbeit."
+  retinue:
+    - type: RETINUE_GUARD
+      mode: guard
+      label: "Leibwache"
+      intro: "Bleibe in meiner Naehe und beschuetze mich. Ich vertraue nur meinen besten Gefolgsleuten."
+      guard-minutes: 10
+      cooldown-minutes: 2880
+      difficulty-tier: 5
+    - type: RETINUE_GOLEM
+      mode: golem
+      label: "Golem-Wache"
+      intro: "Ein eiserner Waerter wuerde dieses Dorf fuer Generationen schuetzen. Erschaffe einen Golem!"
+      cooldown-minutes: 2880
+      difficulty-tier: 5
+    - type: RETINUE_WALL
+      mode: wall
+      label: "Mauerbau"
+      intro: "Stein um Stein soll unser Dorf wachsen. Errichte eine Mauer, die den Feind zurueckhaelt."
+      amount: 64
+      cooldown-minutes: 2880
+      difficulty-tier: 5
+    - type: RETINUE_BELL
+      mode: bell
+      label: "Glocken-Stifter"
+      intro: "Eine Glocke am Treffpunkt laeutet unseren Bund ein. Bringe mir eine Glocke herbei."
+      cooldown-minutes: 2880
+      difficulty-tier: 5
+
+  legendary:
+    - type: LEGENDARY_DRAGON
+      intro: "Legendarer Auftrag: Toete den Enderdrachen, damit das Dorf endlich aufatmen kann."
+      difficulty-tier: 5
+      cooldown-minutes: 140
+    - type: LEGENDARY_BLAZE
+      intro: "Legendarer Auftrag: Bringe mir 5 Lohenruten aus dem Nether, die wir fuer Grosses brauchen."
+      difficulty-tier: 5
+      cooldown-minutes: 140
+    - type: LEGENDARY_END
+      intro: "Legendarer Auftrag: Besorge eine seltene End-Beute fuer unser Dorf."
+      difficulty-tier: 5
+      cooldown-minutes: 140
+    - type: LEGENDARY_NETHER
+      intro: "Legendarer Auftrag: Bringe einen Nether-Stern oder Wither-Skelett-Schaedel – Beute aus den Tiefen der Hoelle."
+      difficulty-tier: 5
+      cooldown-minutes: 140

@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: prompt_builder.py Reputations-abhängige Erinnerungsdars
 quelle: "roadmap-memory.md → Phase 4c, Aufgabe 4c-2"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4c"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: prompt_builder.py Reputations-abhängige Erinnerungsdarstellung

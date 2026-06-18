@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: summary_client.py Reputation-Wert einbauen"
 quelle: "roadmap-memory.md → Phase 4c, Aufgabe 4c-1"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4c"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: summary_client.py Reputation-Wert einbauen

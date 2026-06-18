@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: memory_db.py reputation_at_summary Spalte"
 quelle: "roadmap-memory.md → Phase 4c, Aufgabe 4c-3"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4c"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: memory_db.py reputation_at_summary Spalte

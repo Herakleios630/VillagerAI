@@ -446,9 +446,19 @@ def _build_rules_section(payload: dict, config: dict) -> str:
     else:
         reputation_guidance = "Neutraler bis leicht positiver Ruf: bleibe knapp, glaubwürdig und situationsbezogen."
 
+    # Smalltalk-Regel (von Java berechnetes bool-Flag)
+    is_smalltalk = bool(payload.get("isSmalltalk"))
+    smalltalk_rule = ""
+    if is_smalltalk:
+        smalltalk_rule = (
+            "- Die aktuelle Nachricht ist Smalltalk. Biete keine Quest an, frage nicht nach Arbeit oder Aufgaben. "
+            "Antworte mit normalem Dorfalltag.\n"
+        )
+
     return (
         "Regeln:\n"
-        "- Antworte in 1-2 kurzen Sätzen, direkt auf die letzte Aussage/Frage des Spielers.\n"
+        + smalltalk_rule
+        + "- Antworte in 1-2 kurzen Sätzen, direkt auf die letzte Aussage/Frage des Spielers.\n"
         "- Kein Vorwort, keine Meta-Einleitung, keine Zusammenfassung oder Wiederholung der Spielernachricht.\n"
         "- Keine IDs, UUIDs, technischen Details; sage nicht, dass du eine KI/ein Modell bist.\n"
         "- Bleibe in deiner Rolle; begrüße/stelle dich nicht erneut vor außer bei sichtbar neuem Gespräch.\n"

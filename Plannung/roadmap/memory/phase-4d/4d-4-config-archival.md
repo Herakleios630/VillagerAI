@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: config.json memory.archival Sektion"
 quelle: "roadmap-memory.md → Phase 4d, Aufgabe 4d-4"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4d"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: config.json memory.archival Sektion

@@ -130,6 +130,7 @@ Stand: 2026-06-13
 
 ## Naechste Schritte
 
+- ✅ **Bugfix #18 (S05-Folgefehler) abgeschlossen (2025-07-17):** Chief-Identity-Widerspruch behoben (villageEventSummary), Population-Cache eingebaut (jetzt 19 statt 1), Async-Crash eliminiert.
 - 🔜 **Karte 14d** – Integrationstest + Deployment des Chief-Villager-Umbaus (nächster Schritt nach 14c)
 - ✅ Langzeit-Fakten Paket D: Retrieval + Relevanz-Filter (abgeschlossen 2025-09-19)
 - Langzeit-Fakten Paket E: Prompt-Builder Facts-Section (vorbereitet, _build_facts_section + Facts-Sektion integriert)

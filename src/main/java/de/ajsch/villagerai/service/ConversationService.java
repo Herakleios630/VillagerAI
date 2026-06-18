@@ -4,15 +4,20 @@ import de.ajsch.villagerai.VillageChiefPlugin;
 import de.ajsch.villagerai.ai.AIService;
 import de.ajsch.villagerai.model.AIReply;
 import de.ajsch.villagerai.model.AIRequest;
-import de.ajsch.villagerai.model.Chief;
+import de.ajsch.villagerai.model.Speaker;
 import de.ajsch.villagerai.model.ConversationRole;
 import de.ajsch.villagerai.model.ConversationTurn;
 import de.ajsch.villagerai.model.Quest;
 import de.ajsch.villagerai.model.QuestDifficultyPreference;
 import de.ajsch.villagerai.model.QuestRewardResult;
 import de.ajsch.villagerai.model.VillagerContext;
+import de.ajsch.villagerai.model.VillageIdentity;
 import de.ajsch.villagerai.model.ConversationHistory;
 import de.ajsch.villagerai.storage.ConversationHistoryRepository;
+import de.ajsch.villagerai.model.ChiefAttributes;
+import de.ajsch.villagerai.storage.ChiefRepository;
+import de.ajsch.villagerai.service.SpeakerService;
+import de.ajsch.villagerai.service.VillageIdentityService;
 import java.time.Duration;
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -52,6 +57,9 @@ public final class ConversationService {
     private final ReputationService reputationService;
     private final ConversationHistoryRepository conversationHistoryRepository;
     private final VillagerContextService villagerContextService;
+    private final SpeakerService speakerService;
+    private final ChiefRepository chiefRepository;
+    private final VillageIdentityService villageIdentityService;
     private volatile Duration timeout;
     private volatile int maxConcurrentRequests;
     private volatile String waitingMessage;
@@ -84,6 +92,9 @@ public final class ConversationService {
             QuestUiService questUiService,
             MourningService mourningService,
             ReputationService reputationService,
+            SpeakerService speakerService,
+            ChiefRepository chiefRepository,
+            VillageIdentityService villageIdentityService,
             ConversationHistoryRepository conversationHistoryRepository,
             VillagerContextService villagerContextService,
             Duration timeout,
@@ -112,6 +123,9 @@ public final class ConversationService {
         this.reputationService = reputationService;
         this.conversationHistoryRepository = conversationHistoryRepository;
         this.villagerContextService = villagerContextService;
+        this.speakerService = speakerService;
+        this.chiefRepository = chiefRepository;
+        this.villageIdentityService = villageIdentityService;
         reloadSettings(new RuntimeSettings(
                 timeout,
                 maxConcurrentRequests,
@@ -149,13 +163,24 @@ public final class ConversationService {
         this.repeatFallbackLowHealthThreshold = Math.max(0.0D, Math.min(1.0D, settings.repeatFallbackLowHealthThreshold()));
     }
 
-    public void startConversation(Player player, Villager villager, Chief chief) {
+    public void startConversation(Player player, Villager villager, Speaker speaker) {
+        if (villager == null || speaker == null) {
+            plugin.getLogger().warning("[ConversationService] startConversation() mit null villager oder speaker aufgerufen – abgebrochen");
+            if (player != null && player.isOnline()) {
+                player.sendMessage(Component.text("Dieser Dorfbewohner kann im Moment nicht antworten.", NamedTextColor.RED));
+            }
+            return;
+        }
+
         // End any previous conversation before starting a new one
         endConversation(player.getUniqueId());
 
+        // VillageIdentity-Cache im Main-Thread befuellen (vermeidet Async-Chunk-Zugriffe)
+        villageIdentityService.resolve(villager);
+
         ConversationSession session = new ConversationSession(
                 UUID.randomUUID(),
-                chief,
+                speaker,
                 villager.getUniqueId(),
                 villager.hasAI(),
             villagerContextService.resolve(villager, player.getUniqueId()));
@@ -163,18 +188,18 @@ public final class ConversationService {
         prepareVillagerForConversation(villager);
         orientVillagerTowardPlayer(villager, player);
         player.sendMessage(Component.text(
-                "Du sprichst jetzt mit " + chief.chatName() + ". Schreibe im Chat.",
+                "Du sprichst jetzt mit " + speaker.chatName() + ". Schreibe im Chat.",
                 NamedTextColor.YELLOW));
         player.sendMessage(Component.text("Beende das Gespraech mit /chief exit.", NamedTextColor.GRAY));
-        if (chief.greeting() != null && !chief.greeting().isBlank()) {
-            player.sendMessage(Component.text("[" + chief.chatName() + "] ", NamedTextColor.GOLD)
-                    .append(Component.text(chief.greeting(), NamedTextColor.WHITE)));
+        if (speaker.greeting() != null && !speaker.greeting().isBlank()) {
+            player.sendMessage(Component.text("[" + speaker.chatName() + "] ", NamedTextColor.GOLD)
+                    .append(Component.text(speaker.greeting(), NamedTextColor.WHITE)));
         }
 
         questService.findActiveQuest(player.getUniqueId()).ifPresent(activeQuest -> {
-            if (!activeQuest.chiefId().equals(chief.chiefId())) {
+            if (!activeQuest.speakerId().equals(speaker.speakerId())) {
                 String otherQuestGiverName = questService.findQuest(activeQuest.questId())
-                        .flatMap(q -> Optional.ofNullable(q.chiefId()))
+                        .flatMap(q -> Optional.ofNullable(q.speakerId()))
                         .map(id -> "einem anderen Dorfbewohner")
                         .orElse("einem anderen Dorfbewohner");
                 player.sendMessage(Component.text(
@@ -184,18 +209,18 @@ public final class ConversationService {
             }
         });
 
-        if (!isCloseEnoughForCompletion(player, villager, chief.chiefId())) {
+        if (!isCloseEnoughForCompletion(player, villager, speaker.speakerId())) {
             return;
         }
 
-        Collection<Quest> completedTalkQuests = questService.completeActiveTalkQuests(player.getUniqueId(), chief.chiefId());
+        Collection<Quest> completedTalkQuests = questService.completeActiveTalkQuests(player.getUniqueId(), speaker.speakerId());
         for (Quest completedQuest : completedTalkQuests) {
             player.sendMessage(Component.text("Quest abgeschlossen: " + completedQuest.title(), NamedTextColor.GREEN));
             QuestRewardResult rewardResult = questRewardService.grantRewards(
                     player,
                     completedQuest,
                     reputationService.getVillageScore(player.getUniqueId(), completedQuest.villageId()),
-                    reputationService.getSpeakerScore(player.getUniqueId(), completedQuest.chiefId()));
+                    reputationService.getSpeakerScore(player.getUniqueId(), completedQuest.speakerId()));
             reputationService.applyQuestCompletion(completedQuest);
                 if (hasVisibleReward(rewardResult)) {
                 player.sendMessage(Component.text(
@@ -204,7 +229,7 @@ public final class ConversationService {
             }
         }
 
-        Collection<QuestService.DeliverQuestUpdate> deliverQuestUpdates = questService.completeActiveDeliverQuests(player, chief.chiefId());
+        Collection<QuestService.DeliverQuestUpdate> deliverQuestUpdates = questService.completeActiveDeliverQuests(player, speaker.speakerId());
         for (QuestService.DeliverQuestUpdate deliverQuestUpdate : deliverQuestUpdates) {
             Quest updatedQuest = deliverQuestUpdate.quest();
             if (deliverQuestUpdate.handedInAmount() > 0) {
@@ -224,7 +249,7 @@ public final class ConversationService {
             player,
             updatedQuest,
             reputationService.getVillageScore(player.getUniqueId(), updatedQuest.villageId()),
-            reputationService.getSpeakerScore(player.getUniqueId(), updatedQuest.chiefId()));
+            reputationService.getSpeakerScore(player.getUniqueId(), updatedQuest.speakerId()));
             reputationService.applyQuestCompletion(updatedQuest);
                 if (hasVisibleReward(rewardResult)) {
                 player.sendMessage(Component.text(
@@ -233,7 +258,7 @@ public final class ConversationService {
             }
         }
 
-        Collection<QuestService.DeliverQuestUpdate> repairQuestUpdates = questService.completeActiveRepairQuests(player, chief.chiefId());
+        Collection<QuestService.DeliverQuestUpdate> repairQuestUpdates = questService.completeActiveRepairQuests(player, speaker.speakerId());
         for (QuestService.DeliverQuestUpdate repairQuestUpdate : repairQuestUpdates) {
             Quest updatedQuest = repairQuestUpdate.quest();
             if (repairQuestUpdate.handedInAmount() > 0) {
@@ -253,7 +278,7 @@ public final class ConversationService {
                     player,
                     updatedQuest,
                     reputationService.getVillageScore(player.getUniqueId(), updatedQuest.villageId()),
-                    reputationService.getSpeakerScore(player.getUniqueId(), updatedQuest.chiefId()));
+                    reputationService.getSpeakerScore(player.getUniqueId(), updatedQuest.speakerId()));
             reputationService.applyQuestCompletion(updatedQuest);
             if (hasVisibleReward(rewardResult)) {
                 player.sendMessage(Component.text(
@@ -262,7 +287,7 @@ public final class ConversationService {
             }
         }
 
-        Collection<QuestService.BrewQuestUpdate> brewQuestUpdates = questService.completeActiveBrewQuests(player, chief.chiefId());
+        Collection<QuestService.BrewQuestUpdate> brewQuestUpdates = questService.completeActiveBrewQuests(player, speaker.speakerId());
         for (QuestService.BrewQuestUpdate brewQuestUpdate : brewQuestUpdates) {
             Quest updatedQuest = brewQuestUpdate.quest();
             if (brewQuestUpdate.handedInAmount() > 0) {
@@ -282,7 +307,7 @@ public final class ConversationService {
                     player,
                     updatedQuest,
                     reputationService.getVillageScore(player.getUniqueId(), updatedQuest.villageId()),
-                    reputationService.getSpeakerScore(player.getUniqueId(), updatedQuest.chiefId()));
+                    reputationService.getSpeakerScore(player.getUniqueId(), updatedQuest.speakerId()));
             reputationService.applyQuestCompletion(updatedQuest);
             if (hasVisibleReward(rewardResult)) {
                 player.sendMessage(Component.text(
@@ -293,20 +318,88 @@ public final class ConversationService {
 
         questService.syncActiveFetchQuests(player);
 
+        //  LEGENDARY quest completions 
+        Collection<QuestService.BrewQuestUpdate> legendaryBlazeUpdates = questService.completeLegendaryBlazeQuests(player, speaker.speakerId());
+        for (QuestService.BrewQuestUpdate legendaryUpdate : legendaryBlazeUpdates) {
+            Quest updatedQuest = legendaryUpdate.quest();
+            if (legendaryUpdate.handedInAmount() > 0) {
+                player.sendMessage(Component.text(
+                        "Lohenruten abgegeben: insgesamt " + updatedQuest.progress() + " / " + updatedQuest.goal()
+                                + " fuer " + updatedQuest.title()
+                                + " (diesmal " + legendaryUpdate.handedInAmount() + ")",
+                        NamedTextColor.GREEN));
+            }
+            if (legendaryUpdate.completed()) {
+                player.sendMessage(Component.text("Legendäre Quest abgeschlossen: " + updatedQuest.title(), NamedTextColor.GREEN));
+                QuestRewardResult rewardResult = questRewardService.grantRewards(
+                        player, updatedQuest,
+                        reputationService.getVillageScore(player.getUniqueId(), updatedQuest.villageId()),
+                        reputationService.getSpeakerScore(player.getUniqueId(), updatedQuest.speakerId()));
+                reputationService.applyQuestCompletion(updatedQuest);
+                if (hasVisibleReward(rewardResult)) {
+                    player.sendMessage(Component.text(buildRewardSummary(rewardResult), NamedTextColor.GREEN));
+                }
+            }
+        }
+        Collection<QuestService.BrewQuestUpdate> legendaryEndUpdates = questService.completeLegendaryEndQuests(player, speaker.speakerId());
+        for (QuestService.BrewQuestUpdate legendaryUpdate : legendaryEndUpdates) {
+            Quest updatedQuest = legendaryUpdate.quest();
+            if (legendaryUpdate.handedInAmount() > 0) {
+                player.sendMessage(Component.text(
+                        "End-Beute abgegeben: insgesamt " + updatedQuest.progress() + " / " + updatedQuest.goal()
+                                + " fuer " + updatedQuest.title()
+                                + " (diesmal " + legendaryUpdate.handedInAmount() + ")",
+                        NamedTextColor.GREEN));
+            }
+            if (legendaryUpdate.completed()) {
+                player.sendMessage(Component.text("Legendäre Quest abgeschlossen: " + updatedQuest.title(), NamedTextColor.GREEN));
+                QuestRewardResult rewardResult = questRewardService.grantRewards(
+                        player, updatedQuest,
+                        reputationService.getVillageScore(player.getUniqueId(), updatedQuest.villageId()),
+                        reputationService.getSpeakerScore(player.getUniqueId(), updatedQuest.speakerId()));
+                reputationService.applyQuestCompletion(updatedQuest);
+                if (hasVisibleReward(rewardResult)) {
+                    player.sendMessage(Component.text(buildRewardSummary(rewardResult), NamedTextColor.GREEN));
+                }
+            }
+        }
+        Collection<QuestService.BrewQuestUpdate> legendaryNetherUpdates = questService.completeLegendaryNetherQuests(player, speaker.speakerId());
+        for (QuestService.BrewQuestUpdate legendaryUpdate : legendaryNetherUpdates) {
+            Quest updatedQuest = legendaryUpdate.quest();
+            if (legendaryUpdate.handedInAmount() > 0) {
+                player.sendMessage(Component.text(
+                        "Nether-Beute abgegeben: insgesamt " + updatedQuest.progress() + " / " + updatedQuest.goal()
+                                + " fuer " + updatedQuest.title()
+                                + " (diesmal " + legendaryUpdate.handedInAmount() + ")",
+                        NamedTextColor.GREEN));
+            }
+            if (legendaryUpdate.completed()) {
+                player.sendMessage(Component.text("Legendäre Quest abgeschlossen: " + updatedQuest.title(), NamedTextColor.GREEN));
+                QuestRewardResult rewardResult = questRewardService.grantRewards(
+                        player, updatedQuest,
+                        reputationService.getVillageScore(player.getUniqueId(), updatedQuest.villageId()),
+                        reputationService.getSpeakerScore(player.getUniqueId(), updatedQuest.speakerId()));
+                reputationService.applyQuestCompletion(updatedQuest);
+                if (hasVisibleReward(rewardResult)) {
+                    player.sendMessage(Component.text(buildRewardSummary(rewardResult), NamedTextColor.GREEN));
+                }
+            }
+        }
+
         // Re-scan village-light secure quests: a player may have placed lights
         // elsewhere and now returns to the quest giver.
         questService.syncAllVillageLightProgress(player);
 
         Collection<Quest> completedInteractionQuests = questService.completeReadyInteractionQuests(
                 player.getUniqueId(),
-                chief.chiefId());
+                speaker.speakerId());
         for (Quest completedQuest : completedInteractionQuests) {
             player.sendMessage(Component.text("Quest abgeschlossen: " + completedQuest.title(), NamedTextColor.GREEN));
             QuestRewardResult rewardResult = questRewardService.grantRewards(
                 player,
                 completedQuest,
                 reputationService.getVillageScore(player.getUniqueId(), completedQuest.villageId()),
-                reputationService.getSpeakerScore(player.getUniqueId(), completedQuest.chiefId()));
+                reputationService.getSpeakerScore(player.getUniqueId(), completedQuest.speakerId()));
             reputationService.applyQuestCompletion(completedQuest);
                 if (hasVisibleReward(rewardResult)) {
                 player.sendMessage(Component.text(
@@ -328,8 +421,8 @@ public final class ConversationService {
         }
 
         return Optional.of(new ConversationSnapshot(
-                session.chief().chiefId(),
-                session.chief().villageId(),
+                session.speaker().speakerId(),
+                session.speaker().villageId(),
                 Duration.ofMillis(System.currentTimeMillis() - session.lastInteractionMillis().get()).toSeconds()));
     }
 
@@ -407,7 +500,7 @@ public final class ConversationService {
 
         // Chat-Debug: Spieler-Eingabe loggen (NORMAL und VERBOSE)
         plugin.logChatDebug(VillageChiefPlugin.ChatDebugLevel.NORMAL,
-                "[INPUT] " + playerUuid + " -> " + session.chief().chatName() + ": " + message);
+                "[INPUT] " + playerUuid + " -> " + session.speaker().chatName() + ": " + message);
 
         if (handleConversationExitRequest(playerUuid, session, message)) {
             return;
@@ -440,10 +533,10 @@ public final class ConversationService {
         long playerTurnTimestamp = System.currentTimeMillis();
         conversationHistoryRepository.appendTurn(
                 playerUuid,
-                session.chief(),
+                session.speaker(),
                 new ConversationTurn(ConversationRole.PLAYER, message, playerTurnTimestamp));
 
-        String chiefId = session.chief().chiefId();
+        String chiefId = session.speaker().speakerId();
         UUID currentOwner = chiefRequestOwners.putIfAbsent(chiefId, playerUuid);
         if (currentOwner != null && !currentOwner.equals(playerUuid)) {
             session.awaitingReply().set(false);
@@ -460,41 +553,43 @@ public final class ConversationService {
             return;
         }
 
-        List<ConversationTurn> historyTurns = conversationHistoryRepository.findHistory(playerUuid, session.chief().chiefId())
+        List<ConversationTurn> historyTurns = conversationHistoryRepository.findHistory(playerUuid, session.speaker().speakerId())
             .map(history -> history.turns())
             .orElse(List.of());
         Collection<ConversationHistory> playerHistories = conversationHistoryRepository.findByPlayerUuid(playerUuid);
         String recentConversation = formatRecentConversation(historyTurns);
-        String relationshipMemorySummary = buildRelationshipMemorySummary(session.chief(), historyTurns, playerHistories);
+        String relationshipMemorySummary = buildRelationshipMemorySummary(session.speaker(), historyTurns, playerHistories);
         List<String> recentChiefReplies = findRecentChiefReplies(historyTurns, recentChiefRepliesLimit);
-        int villageReputationScore = reputationService.getVillageScore(playerUuid, session.chief().villageId());
-        String villageReputationSummary = reputationService.getVillageSummary(playerUuid, session.chief().villageId());
-        int speakerReputationScore = reputationService.getSpeakerScore(playerUuid, session.chief().chiefId());
-        String speakerReputationSummary = reputationService.getSpeakerSummary(playerUuid, session.chief().chiefId());
+        int villageReputationScore = reputationService.getVillageScore(playerUuid, session.speaker().villageId());
+        String villageReputationSummary = reputationService.getVillageSummary(playerUuid, session.speaker().villageId());
+        int speakerReputationScore = reputationService.getSpeakerScore(playerUuid, session.speaker().speakerId());
+        String speakerReputationSummary = reputationService.getSpeakerSummary(playerUuid, session.speaker().speakerId());
         int combinedReputationScore = reputationService.getCombinedScore(
             playerUuid,
-            session.chief().villageId(),
-            session.chief().chiefId());
+            session.speaker().villageId(),
+            session.speaker().speakerId());
         String combinedReputationSummary = reputationService.getCombinedSummary(
             playerUuid,
-            session.chief().villageId(),
-            session.chief().chiefId());
+            session.speaker().villageId(),
+            session.speaker().speakerId());
 
-        AIRequest request = new AIRequest(
-                session.chief().chiefId(),
-                session.chief().villageId(),
-            session.chief().villageName(),
-            session.chief().villageDescription(),
-            session.chief().villageAttributes(),
-            session.chief().villageBiome(),
-            session.chief().villagePopulationEstimate(),
-            session.chief().villageEventSummary(),
-            session.chief().displayName(),
-            session.chief().role(),
-            session.chief().personality(),
-            session.chief().speechTone(),
-            session.chief().behaviorHint(),
-            session.chief().greeting(),
+        VillageIdentity villageIdentity = villageIdentityService.resolveByVillageId(session.speaker().villageId());
+                boolean isSmalltalk = isCasualSmalltalk(message) && !isTaskSeeking(message);
+                AIRequest request = new AIRequest(
+                session.speaker().speakerId(),
+                session.speaker().villageId(),
+            villageIdentity.villageName(),
+            villageIdentity.villageDescription(),
+            villageIdentity.villageAttributes(),
+            villageIdentity.villageBiome(),
+            villageIdentity.villagePopulationEstimate(),
+            villageIdentity.villageEventSummary(),
+            session.speaker().displayName(),
+            session.speaker().role(),
+            session.speaker().personality(),
+            session.speaker().speechTone(),
+            session.speaker().behaviorHint(),
+            session.speaker().greeting(),
             session.villagerContext().profession(),
             session.villagerContext().villagerType(),
             session.villagerContext().currentBiome(),
@@ -515,6 +610,8 @@ public final class ConversationService {
             session.villagerContext().jobSitePoi(),
             session.villagerContext().potentialJobSitePoi(),
             session.villagerContext().meetingPointPoi(),
+                session.villagerContext().mcDay(),
+                session.villagerContext().mcTime(),
                 villageReputationScore,
                 villageReputationSummary,
                 speakerReputationScore,
@@ -523,10 +620,17 @@ public final class ConversationService {
                 combinedReputationSummary,
                 combinedReputationScore,
                 combinedReputationSummary,
-                !mourningService.isVillageInMourning(session.chief().villageId()),
-                mourningService.isVillageInMourning(session.chief().villageId()),
+                !mourningService.isVillageInMourning(session.speaker().villageId()),
+                mourningService.isVillageInMourning(session.speaker().villageId()),
+                buildChiefLocation(session.speaker()),
+                session.speaker().speakerStatus().name(),
+                buildChiefNarrative(session.speaker()),
+                findChiefAttributes(session.speaker()),
                 playerUuid,
-                message);
+                message,
+                                plugin.getConfig().getBoolean("memory.enabled", false),
+                plugin.getConfig().getStringList("memory.trigger-fallback-phrases"),
+                isSmalltalk);
 
         // Chat-Debug: Prompt loggen (nur VERBOSE)
         logChatDebugPrompt(request);
@@ -560,8 +664,8 @@ public final class ConversationService {
 
                 conversationHistoryRepository.appendTurn(
                     playerUuid,
-                    session.chief(),
-                    new ConversationTurn(ConversationRole.CHIEF, replyText, System.currentTimeMillis()));
+                    session.speaker(),
+                    new ConversationTurn(ConversationRole.NPC, replyText, System.currentTimeMillis()));
 
             sendChiefMessage(player, session, replyText, NamedTextColor.WHITE);
 
@@ -671,7 +775,7 @@ public final class ConversationService {
     }
 
     private void releaseRequestSlot(ConversationSession session, UUID playerUuid) {
-        chiefRequestOwners.remove(session.chief().chiefId(), playerUuid);
+        chiefRequestOwners.remove(session.speaker().speakerId(), playerUuid);
         session.awaitingReply().set(false);
         inFlightRequests.updateAndGet(current -> Math.max(0, current - 1));
         drainQueuedPlayerMessage(playerUuid, session);
@@ -701,8 +805,8 @@ public final class ConversationService {
         String farewell = buildConversationFarewell(session, message);
         conversationHistoryRepository.appendTurn(
                 playerUuid,
-                session.chief(),
-                new ConversationTurn(ConversationRole.CHIEF, farewell, System.currentTimeMillis()));
+                session.speaker(),
+                new ConversationTurn(ConversationRole.NPC, farewell, System.currentTimeMillis()));
 
         Bukkit.getScheduler().runTask(plugin, () -> {
             Player player = Bukkit.getPlayer(playerUuid);
@@ -732,7 +836,7 @@ public final class ConversationService {
             session.pendingQuestOffer().set(null);
             session.pendingQuestOfferWasSpontaneous().set(false);
             if (wasSpontaneous) {
-                setSpontaneousOfferCooldown(playerUuid, session.chief().chiefId(), spontaneousQuestOfferDeclineCooldownMillis);
+                setSpontaneousOfferCooldown(playerUuid, session.speaker().speakerId(), spontaneousQuestOfferDeclineCooldownMillis);
             }
             sendGeneratedChiefReply(playerUuid, session, "In Ordnung. Dann vielleicht spaeter.");
             return true;
@@ -750,7 +854,7 @@ public final class ConversationService {
         appendPlayerTurn(playerUuid, session, message);
         QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(
                 playerUuid,
-                session.chief().chiefId());
+                session.speaker().speakerId());
         if (!availability.allowed()) {
             sendGeneratedChiefReply(playerUuid, session, buildQuestUnavailableReply(availability));
             return true;
@@ -762,22 +866,22 @@ public final class ConversationService {
             return true;
         }
 
-        int villageReputationScore = reputationService.getVillageScore(playerUuid, session.chief().villageId());
-        int speakerReputationScore = reputationService.getSpeakerScore(playerUuid, session.chief().chiefId());
+        int villageReputationScore = reputationService.getVillageScore(playerUuid, session.speaker().villageId());
+        int speakerReputationScore = reputationService.getSpeakerScore(playerUuid, session.speaker().speakerId());
         int unlockedTier = Math.min(
             questDifficultyService.resolveUnlockedTier(villageReputationScore),
-            computeLegendaryAllowedTier(player, session.chief().chiefId(), villageReputationScore, speakerReputationScore));
+            computeLegendaryAllowedTier(player, session.speaker().speakerId(), villageReputationScore, speakerReputationScore));
         int maxTier = questDifficultyService.maxTier();
-        int preferredTier = questDifficultyService.getPreference(playerUuid, session.chief().chiefId()).preferredDifficultyTier();
+        int preferredTier = questDifficultyService.getPreference(playerUuid, session.speaker().speakerId()).preferredDifficultyTier();
 
         String legendaryHint = "";
         if (unlockedTier < maxTier && preferredTier >= maxTier) {
-            legendaryHint = buildLegendaryBlockedReply(player, session.chief().chiefId(), villageReputationScore, speakerReputationScore);
+            legendaryHint = buildLegendaryBlockedReply(player, session.speaker().speakerId(), villageReputationScore, speakerReputationScore);
         }
 
         QuestOfferService.QuestOffer offer = questOfferService.createOfferForTier(
             playerUuid,
-            session.chief(),
+            session.speaker(),
             session.villagerContext(),
             Math.min(preferredTier, unlockedTier));
         if (offer == null) {
@@ -807,7 +911,7 @@ public final class ConversationService {
             sendGeneratedChiefReply(playerUuid, session, "Du hast von mir gerade keine Aufgabe offen, die ich streichen koennte.");
             return true;
         }
-        if (!activeQuest.chiefId().equals(session.chief().chiefId())) {
+        if (!activeQuest.speakerId().equals(session.speaker().speakerId())) {
             sendGeneratedChiefReply(
                     playerUuid,
                     session,
@@ -848,14 +952,14 @@ public final class ConversationService {
         }
 
         questService.syncActiveFetchQuests(player);
-        Quest quest = questOfferService.acceptOffer(player, session.chief(), pendingOffer);
+        Quest quest = questOfferService.acceptOffer(player, session.speaker(), pendingOffer);
         if (pendingOffer.difficultyTier() >= questDifficultyService.legendaryTier()) {
-            setLegendaryOfferCooldown(playerUuid, session.chief().chiefId(), questDifficultyService.legendaryCooldownMillis());
+            setLegendaryOfferCooldown(playerUuid, session.speaker().speakerId(), questDifficultyService.legendaryCooldownMillis());
         }
         conversationHistoryRepository.appendTurn(
                 playerUuid,
-                session.chief(),
-                new ConversationTurn(ConversationRole.CHIEF, pendingOffer.acceptedReplyText(), System.currentTimeMillis()));
+                session.speaker(),
+                new ConversationTurn(ConversationRole.NPC, pendingOffer.acceptedReplyText(), System.currentTimeMillis()));
         sendChiefMessage(player, session, pendingOffer.acceptedReplyText(), NamedTextColor.WHITE);
         player.sendMessage(Component.text("Quest angenommen: " + quest.title(), NamedTextColor.GREEN));
 
@@ -892,15 +996,15 @@ public final class ConversationService {
     private void appendPlayerTurn(UUID playerUuid, ConversationSession session, String message) {
         conversationHistoryRepository.appendTurn(
                 playerUuid,
-                session.chief(),
+                session.speaker(),
                 new ConversationTurn(ConversationRole.PLAYER, message, System.currentTimeMillis()));
     }
 
     private void sendGeneratedChiefReply(UUID playerUuid, ConversationSession session, String replyText) {
         conversationHistoryRepository.appendTurn(
                 playerUuid,
-                session.chief(),
-                new ConversationTurn(ConversationRole.CHIEF, replyText, System.currentTimeMillis()));
+                session.speaker(),
+                new ConversationTurn(ConversationRole.NPC, replyText, System.currentTimeMillis()));
         Bukkit.getScheduler().runTask(plugin, () -> {
             Player player = Bukkit.getPlayer(playerUuid);
             if (player == null || !player.isOnline()) {
@@ -930,20 +1034,20 @@ public final class ConversationService {
 
         int combinedReputation = reputationService.getCombinedScore(
                 playerUuid,
-                session.chief().villageId(),
-                session.chief().chiefId());
+                session.speaker().villageId(),
+                session.speaker().speakerId());
         if (combinedReputation < spontaneousQuestOfferMinCombinedReputation) {
             return;
         }
 
         QuestService.TalkQuestAvailability availability = questService.validateQuestActivation(
                 playerUuid,
-                session.chief().chiefId());
+                session.speaker().speakerId());
         if (!availability.allowed()) {
             return;
         }
 
-        String cooldownKey = playerUuid + ":" + session.chief().chiefId();
+        String cooldownKey = playerUuid + ":" + session.speaker().speakerId();
         long now = System.currentTimeMillis();
         Long cooldownUntil = spontaneousQuestOfferCooldowns.get(cooldownKey);
         if (cooldownUntil != null && cooldownUntil > now) {
@@ -953,12 +1057,12 @@ public final class ConversationService {
             return;
         }
 
-        int villageReputationScore = reputationService.getVillageScore(playerUuid, session.chief().villageId());
-        int speakerReputation = reputationService.getSpeakerScore(playerUuid, session.chief().chiefId());
-        QuestDifficultyPreference difficultyPreference = questDifficultyService.getPreference(playerUuid, session.chief().chiefId());
+        int villageReputationScore = reputationService.getVillageScore(playerUuid, session.speaker().villageId());
+        int speakerReputation = reputationService.getSpeakerScore(playerUuid, session.speaker().speakerId());
+        QuestDifficultyPreference difficultyPreference = questDifficultyService.getPreference(playerUuid, session.speaker().speakerId());
         int unlockedTier = Math.min(
             questDifficultyService.resolveUnlockedTier(villageReputationScore),
-            computeLegendaryAllowedTier(player, session.chief().chiefId(), villageReputationScore, speakerReputation));
+            computeLegendaryAllowedTier(player, session.speaker().speakerId(), villageReputationScore, speakerReputation));
         int preferredTier = questDifficultyService.clampTier(difficultyPreference.preferredDifficultyTier());
 
         boolean offerChallengeTier = questDifficultyService.challengeOffersEnabled()
@@ -969,12 +1073,12 @@ public final class ConversationService {
         QuestOfferService.QuestOffer offer = offerChallengeTier
             ? questOfferService.createOfferForTier(
                 playerUuid,
-                session.chief(),
+                session.speaker(),
                 session.villagerContext(),
                 Math.min(unlockedTier, preferredTier + 1))
             : questOfferService.createOffer(
                 playerUuid,
-                session.chief(),
+                session.speaker(),
                 session.villagerContext(),
                 villageReputationScore);
         if (offer == null) {
@@ -982,7 +1086,7 @@ public final class ConversationService {
         }
         session.pendingQuestOffer().set(offer);
         session.pendingQuestOfferWasSpontaneous().set(true);
-        setSpontaneousOfferCooldown(playerUuid, session.chief().chiefId(), spontaneousQuestOfferCooldownMillis);
+        setSpontaneousOfferCooldown(playerUuid, session.speaker().speakerId(), spontaneousQuestOfferCooldownMillis);
 
         String offerIntro;
         if (offerChallengeTier) {
@@ -994,8 +1098,8 @@ public final class ConversationService {
         }
         conversationHistoryRepository.appendTurn(
                 playerUuid,
-                session.chief(),
-                new ConversationTurn(ConversationRole.CHIEF, offerIntro + offer.promptText(), System.currentTimeMillis()));
+                session.speaker(),
+                new ConversationTurn(ConversationRole.NPC, offerIntro + offer.promptText(), System.currentTimeMillis()));
         sendChiefMessage(player, session, offerIntro + offer.promptText(), NamedTextColor.WHITE);
     }
 
@@ -1088,7 +1192,7 @@ public final class ConversationService {
     }
 
     private void sendChiefMessage(Player player, ConversationSession session, String replyText, NamedTextColor color) {
-        player.sendMessage(Component.text("[" + session.chief().chatName() + "] ", NamedTextColor.GOLD)
+        player.sendMessage(Component.text("[" + session.speaker().chatName() + "] ", NamedTextColor.GOLD)
                 .append(Component.text(replyText, color)));
     }
 
@@ -1163,7 +1267,7 @@ public final class ConversationService {
                     "Dann leb wohl fuer jetzt.",
                     "Gut. Dann beenden wir es hier."
                 };
-        return variants[Math.floorMod(session.chief().chiefId().hashCode() + normalized.hashCode(), variants.length)];
+        return variants[Math.floorMod(session.speaker().speakerId().hashCode() + normalized.hashCode(), variants.length)];
     }
 
     private boolean isAffirmative(String message) {
@@ -1303,7 +1407,7 @@ public final class ConversationService {
         }
 
         Optional<Quest> activeQuest = questService.findActiveQuest(player.getUniqueId());
-        if (activeQuest.isEmpty() || !activeQuest.get().chiefId().equals(chiefId)) {
+        if (activeQuest.isEmpty() || !activeQuest.get().speakerId().equals(chiefId)) {
             return true;
         }
 
@@ -1347,7 +1451,7 @@ public final class ConversationService {
         List<String> condensed = new ArrayList<>();
         String previousNormalized = null;
         for (ConversationTurn turn : compactTurns) {
-            String line = (turn.role() == ConversationRole.PLAYER ? "Spieler" : "Haeuptling") + ": " + turn.message();
+            String line = (turn.role() == ConversationRole.PLAYER ? "Spieler" : turn.role().name()) + ": " + turn.message();
             String normalized = normalizeReplyForRepeatCheck(line);
             if (normalized.equals(previousNormalized)) {
                 continue;
@@ -1362,7 +1466,7 @@ public final class ConversationService {
     }
 
     private String buildRelationshipMemorySummary(
-            Chief chief,
+            Speaker speaker,
             List<ConversationTurn> historyTurns,
             Collection<ConversationHistory> playerHistories) {
         long knownSpeakers = playerHistories == null
@@ -1398,7 +1502,7 @@ public final class ConversationService {
             return recency + " Du kennst den Spieler inzwischen fluechtig und erkennst seinen Umgangston wieder.";
         }
 
-        String speakerName = chief == null ? "du" : chief.chatName();
+        String speakerName = speaker == null ? "du" : speaker.chatName();
         return recency + " Zwischen " + speakerName + " und diesem Spieler gibt es schon eine merkbare gemeinsame Gespraechsgeschichte; antworte so, als erkennst du ihn wieder, ohne falsche Details zu erfinden."
                 + " Bisherige direkte Wortwechsel: Spieler " + playerTurns + ", Dorfbewohner " + speakerTurns + ".";
     }
@@ -1436,7 +1540,7 @@ public final class ConversationService {
         List<String> replies = new ArrayList<>();
         for (int index = turns.size() - 1; index >= 0 && replies.size() < limit; index--) {
             ConversationTurn turn = turns.get(index);
-            if (turn.role() != ConversationRole.CHIEF || turn.message() == null || turn.message().isBlank()) {
+            if (turn.role() != ConversationRole.NPC || turn.message() == null || turn.message().isBlank()) {
                 continue;
             }
 
@@ -1477,7 +1581,7 @@ public final class ConversationService {
                 "Schon besser, wenn man mich nicht im Kreis reden laesst. Was brauchst du?",
                 "Ich halte mich auf den Beinen. Sag, worauf du hinauswillst."
             };
-            return variants[Math.floorMod(session.chief().chiefId().hashCode() + historySize, variants.length)];
+            return variants[Math.floorMod(session.speaker().speakerId().hashCode() + historySize, variants.length)];
         }
 
         String[] variants;
@@ -1494,17 +1598,17 @@ public final class ConversationService {
                 "Reden wir ueber etwas anderes. Was brennt dir auf der Seele?"
             };
         }
-        return variants[Math.floorMod(session.chief().chiefId().hashCode() + historySize, variants.length)];
+        return variants[Math.floorMod(session.speaker().speakerId().hashCode() + historySize, variants.length)];
     }
 
     private void logChatDebugReply(UUID playerUuid, ConversationSession session, String replyText) {
         plugin.logChatDebug(VillageChiefPlugin.ChatDebugLevel.NORMAL,
-                "[OUTPUT] " + session.chief().chatName() + " -> Spieler " + playerUuid + ": " + replyText);
+                "[OUTPUT] " + session.speaker().chatName() + " -> Spieler " + playerUuid + ": " + replyText);
 
         // Statusblock bauen
         StringBuilder status = new StringBuilder();
         status.append("[STATUS]");
-        status.append(" mourning=").append(mourningService.isVillageInMourning(session.chief().villageId()));
+        status.append(" mourning=").append(mourningService.isVillageInMourning(session.speaker().villageId()));
 
         // Chief alive/not null check
         boolean chiefExists = false;
@@ -1542,7 +1646,7 @@ public final class ConversationService {
 
         StringBuilder prompt = new StringBuilder();
         prompt.append("SYSTEM: ").append(plugin.getConfig().getString("ai.http.system-prompt", ""));
-        prompt.append("\nchiefId=").append(request.chiefId());
+        prompt.append("\nchiefId=").append(request.speakerId());
         prompt.append(" villageId=").append(request.villageId());
         prompt.append(" villageName=").append(request.villageName());
         prompt.append("\nvillageDescription=").append(request.villageDescription());
@@ -1550,11 +1654,11 @@ public final class ConversationService {
         prompt.append("\nvillageBiome=").append(request.villageBiome());
         prompt.append(" villagePopulation=").append(request.villagePopulationEstimate());
         prompt.append("\nvillageEvent=").append(request.villageEventSummary());
-        prompt.append("\nchiefName=").append(request.chiefName());
-        prompt.append(" role=").append(request.chiefRole());
-        prompt.append(" personality=").append(request.chiefPersonality());
-        prompt.append(" tone=").append(request.chiefTone());
-        prompt.append(" behavior=").append(request.chiefBehaviorHint());
+        prompt.append("\nchiefName=").append(request.displayName());
+        prompt.append(" role=").append(request.role());
+        prompt.append(" personality=").append(request.personality());
+        prompt.append(" tone=").append(request.speechTone());
+        prompt.append(" behavior=").append(request.behaviorHint());
         prompt.append("\nvillagerProfession=").append(request.villagerProfession());
         prompt.append(" villagerType=").append(request.villagerType());
         prompt.append("\nbiome=").append(request.currentBiome());
@@ -1595,7 +1699,7 @@ public final class ConversationService {
                 "[PROMPT] " + prompt.toString());
     }
 
-    private boolean looksLikeMemoryRecall(String message) {
+        private boolean looksLikeMemoryRecall(String message) {
         String normalized = normalizeForIntent(message);
         if (normalized.isBlank()) {
             return false;
@@ -1608,6 +1712,55 @@ public final class ConversationService {
                 || normalized.contains("fruher")
                 || normalized.contains("letztes mal")
                 || normalized.contains("damals");
+    }
+
+    private boolean isCasualSmalltalk(String playerMessage) {
+        String normalized = normalizeForIntent(playerMessage);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        return normalized.contains("unterhalten")
+                || normalized.contains("hallo")
+                || normalized.contains("hi")
+                || normalized.contains("guten tag")
+                || normalized.contains("guten morgen")
+                || normalized.contains("guten abend")
+                || normalized.contains("gruss dich")
+                || normalized.contains("gruess dich")
+                || normalized.contains("na ")
+                || normalized.equals("na")
+                || normalized.contains("wie geht")
+                || normalized.contains("was machst du")
+                || normalized.contains("was gibt es neues")
+                || normalized.contains("wie laeuft")
+                || normalized.contains("wie läuft")
+                || normalized.contains("plaudern")
+                || normalized.contains("quatschen")
+                || normalized.contains("smalltalk")
+                || normalized.contains("einfach reden")
+                || normalized.contains("nur reden")
+                || normalized.contains("mit dir reden")
+                || normalized.contains("mit dir sprechen")
+                || normalized.contains("etwas reden");
+    }
+
+    private boolean isTaskSeeking(String playerMessage) {
+        String normalized = normalizeForIntent(playerMessage);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        return normalized.contains("auftrag")
+                || normalized.contains("aufgabe")
+                || normalized.contains("arbeit")
+                || normalized.contains("hilfe")
+                || normalized.contains("helfen")
+                || normalized.contains("quest")
+                || normalized.contains("etwas zu tun")
+                || normalized.contains("brauchst du etwas")
+                || normalized.contains("kann ich etwas tun")
+                || normalized.contains("hast du was fuer mich")
+                || normalized.contains("hast du etwas fuer mich")
+                || normalized.contains("job fuer mich");
     }
 
     private String shortenForChatDebug(String value, int maxLength) {
@@ -1633,6 +1786,56 @@ public final class ConversationService {
                 .trim();
     }
 
+            /**
+     * Baut die chiefLocation fuer den Prompt.
+     * Fuer aktive Chiefs: eigene Position.
+     * Fuer normale Villager: Position des aktiven Chiefs im Dorf, falls vorhanden.
+     */
+    private String buildChiefLocation(Speaker speaker) {
+        if (speaker.isChief()) {
+            return String.format(Locale.ROOT, "Du stehst bei x=%.1f, y=%.1f, z=%.1f in %s",
+                    speaker.x(), speaker.y(), speaker.z(), speaker.world());
+        }
+        return speakerService.findActiveChiefByVillageId(speaker.villageId())
+                .map(chief -> String.format(Locale.ROOT,
+                        "Der Haeuptling %s (%s) steht bei x=%.1f, y=%.1f, z=%.1f in %s",
+                        chief.displayName(), chief.role(),
+                        chief.x(), chief.y(), chief.z(), chief.world()))
+                .orElse("Das Dorf hat derzeit keinen Haeuptling.");
+    }
+
+    /**
+     * Baut die chiefNarrative fuer den Prompt.
+     * Fuer aktive Chiefs: Bestaetigung, dass sie der Chief sind.
+     * Fuer normale Villager: Information ueber den tatsaechlichen Chief.
+     */
+    private String buildChiefNarrative(Speaker speaker) {
+        if (speaker.isChief()) {
+            return String.format(
+                    "Du BIST der Haeuptling %s, die Fuehrungsperson dieses Dorfes. "
+                    + "Die Bewohner respektieren deine Autoritaet.",
+                    speaker.displayName());
+        }
+        return speakerService.findActiveChiefByVillageId(speaker.villageId())
+                .map(chief -> String.format(
+                        "Der aktuelle Haeuptling dieses Dorfes ist %s (%s). "
+                        + "Du bist ein normaler Bewohner und sprichst aus der Perspektive "
+                        + "eines einfachen Dorfbewohners.",
+                        chief.displayName(), chief.role()))
+                .orElse("Das Dorf hat derzeit keinen Haeuptling. "
+                        + "Du bist ein normaler Bewohner.");
+    }
+
+    /**
+     * Sucht die ChiefAttributes zum aktiven Chief des Dorfes dieses Speakers.
+     */
+    @org.jetbrains.annotations.Nullable
+    private de.ajsch.villagerai.model.ChiefAttributes findChiefAttributes(Speaker speaker) {
+        return speakerService.findActiveChiefByVillageId(speaker.villageId())
+                .flatMap(chief -> chiefRepository.findByEntityUuid(chief.entityUuid()))
+                .orElse(null);
+    }
+
         public record RuntimeSettings(
             Duration timeout,
             int maxConcurrentRequests,
@@ -1655,7 +1858,7 @@ public final class ConversationService {
 
     private record ConversationSession(
             UUID conversationId,
-            Chief chief,
+            Speaker speaker,
             UUID villagerUuid,
             boolean hadAiEnabledBeforeConversation,
             VillagerContext villagerContext,
@@ -1667,13 +1870,13 @@ public final class ConversationService {
 
         private ConversationSession(
                 UUID conversationId,
-                Chief chief,
+                Speaker speaker,
                 UUID villagerUuid,
                 boolean hadAiEnabledBeforeConversation,
                 VillagerContext villagerContext) {
             this(
                     conversationId,
-                    chief,
+                    speaker,
                     villagerUuid,
                     hadAiEnabledBeforeConversation,
                     villagerContext,

@@ -27,7 +27,6 @@ public final class PluginDataLoader {
 
     public void saveBundledResources() {
         plugin.saveDefaultConfig();
-        plugin.saveResource("chiefs.yml", false);
         plugin.saveResource("quests.yml", false);
         plugin.saveResource("conversation-history.yml", false);
         plugin.saveResource("chief-profiles.yml", false);
@@ -186,8 +185,25 @@ public final class PluginDataLoader {
                 QuestType.KILL,
                 QuestType.VISIT,
                 QuestType.SECURE,
-                QuestType.EXPLORE)) {
-            ConfigurationSection rewardSection = rewardsSection.getConfigurationSection(questType.name().toLowerCase(Locale.ROOT));
+                QuestType.EXPLORE,
+                QuestType.RETINUE_GUARD,
+                QuestType.RETINUE_GOLEM,
+                QuestType.RETINUE_WALL,
+                QuestType.RETINUE_BELL,
+                QuestType.LEGENDARY_DRAGON,
+                QuestType.LEGENDARY_BLAZE,
+                QuestType.LEGENDARY_END,
+                QuestType.LEGENDARY_NETHER)) {
+            // Map Retinue- and Legendary-variants to shared sections
+            String sectionName;
+            if (questType.name().startsWith("RETINUE_")) {
+                sectionName = "retinue";
+            } else if (questType.name().startsWith("LEGENDARY_")) {
+                sectionName = "legendary";
+            } else {
+                sectionName = questType.name().toLowerCase(Locale.ROOT);
+            }
+            ConfigurationSection rewardSection = rewardsSection.getConfigurationSection(sectionName);
             if (rewardSection == null) {
                 plugin.getLogger().warning("Belohnungsdefinition fuer '" + questType.name().toLowerCase(Locale.ROOT) + "' fehlt. Nutze Notfall-Default.");
                 definitions.put(questType, emergencyDefinitions.get(questType));
@@ -324,6 +340,27 @@ public final class PluginDataLoader {
         definitions.put(QuestType.VISIT, new QuestRewardService.RewardDefinition(8, 1, List.of(QuestRewardService.RewardItem.item(Material.TORCH, 8, List.of(Material.LANTERN, Material.SOUL_LANTERN)))));
         definitions.put(QuestType.SECURE, new QuestRewardService.RewardDefinition(10, 2, List.of(QuestRewardService.RewardItem.item(Material.TORCH, 8, List.of(Material.LANTERN, Material.SOUL_LANTERN)))));
         definitions.put(QuestType.EXPLORE, new QuestRewardService.RewardDefinition(12, 2, List.of(QuestRewardService.RewardItem.item(Material.MAP, 1, List.of(Material.FILLED_MAP, Material.MAP)), QuestRewardService.RewardItem.item(Material.COMPASS, 1, List.of(Material.COMPASS, Material.RECOVERY_COMPASS)))));
+        // RETINUE emergency fallback
+        QuestRewardService.RewardDefinition retinueEmergency = new QuestRewardService.RewardDefinition(50, 10, List.of(
+                QuestRewardService.RewardItem.item(Material.DIAMOND, 3, List.of(Material.EMERALD, Material.NETHERITE_SCRAP)),
+                QuestRewardService.RewardItem.item(Material.ENCHANTED_GOLDEN_APPLE, 2, List.of(Material.TOTEM_OF_UNDYING)),
+                QuestRewardService.RewardItem.randomEnchantedBook(2, List.of(Enchantment.MENDING, Enchantment.UNBREAKING, Enchantment.PROTECTION, Enchantment.SHARPNESS))));
+        definitions.put(QuestType.RETINUE_GUARD, retinueEmergency);
+        definitions.put(QuestType.RETINUE_GOLEM, retinueEmergency);
+        definitions.put(QuestType.RETINUE_WALL, retinueEmergency);
+        definitions.put(QuestType.RETINUE_BELL, retinueEmergency);
+        // LEGENDARY emergency fallback
+        QuestRewardService.RewardDefinition legendaryEmergency = new QuestRewardService.RewardDefinition(100, 16, List.of(
+                QuestRewardService.RewardItem.item(Material.ELYTRA, 1, List.of()),
+                QuestRewardService.RewardItem.item(Material.ENCHANTED_GOLDEN_APPLE, 2, List.of(Material.TOTEM_OF_UNDYING)),
+                QuestRewardService.RewardItem.item(Material.NETHERITE_SWORD, 1, List.of()),
+                QuestRewardService.RewardItem.item(Material.NETHERITE_INGOT, 3, List.of(Material.NETHERITE_BLOCK)),
+                QuestRewardService.RewardItem.item(Material.BEACON, 1, List.of()),
+                QuestRewardService.RewardItem.randomEnchantedBook(3, List.of(Enchantment.MENDING, Enchantment.UNBREAKING, Enchantment.PROTECTION, Enchantment.SHARPNESS, Enchantment.EFFICIENCY, Enchantment.FORTUNE, Enchantment.LOOTING, Enchantment.SWEEPING_EDGE))));
+        definitions.put(QuestType.LEGENDARY_DRAGON, legendaryEmergency);
+        definitions.put(QuestType.LEGENDARY_BLAZE, legendaryEmergency);
+        definitions.put(QuestType.LEGENDARY_END, legendaryEmergency);
+        definitions.put(QuestType.LEGENDARY_NETHER, legendaryEmergency);
         return definitions;
     }
 

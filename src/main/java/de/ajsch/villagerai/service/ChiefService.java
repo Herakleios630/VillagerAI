@@ -1,9 +1,12 @@
 package de.ajsch.villagerai.service;
 
+import de.ajsch.villagerai.model.BiomeFamily;
 import de.ajsch.villagerai.model.ChiefAttributes;
+import de.ajsch.villagerai.model.ChiefVisualTier;
 import de.ajsch.villagerai.model.Speaker;
 import de.ajsch.villagerai.model.SpeakerStatus;
 import de.ajsch.villagerai.model.VillageIdentity;
+import de.ajsch.villagerai.service.ReputationService;
 import de.ajsch.villagerai.storage.ChiefRepository;
 import de.ajsch.villagerai.util.Keys;
 import java.util.Optional;
@@ -21,12 +24,13 @@ import org.bukkit.persistence.PersistentDataType;
  */
 public final class ChiefService {
 
-    private final Keys keys;
+        private final Keys keys;
     private final ChiefRepository chiefRepository;
     private final VillageIdentityService villageIdentityService;
     private final ChiefVisualService chiefVisualService;
     private final SpeakerService speakerService;
     private final MourningService mourningService;
+    private final ReputationService reputationService;
     private final Logger logger;
 
     public ChiefService(
@@ -36,6 +40,7 @@ public final class ChiefService {
             ChiefVisualService chiefVisualService,
             SpeakerService speakerService,
             MourningService mourningService,
+            ReputationService reputationService,
             Logger logger) {
         this.keys = keys;
         this.chiefRepository = chiefRepository;
@@ -43,6 +48,7 @@ public final class ChiefService {
         this.chiefVisualService = chiefVisualService;
         this.speakerService = speakerService;
         this.mourningService = mourningService;
+        this.reputationService = reputationService;
         this.logger = logger;
     }
 
@@ -85,8 +91,9 @@ public final class ChiefService {
         // Speaker-Status via SpeakerService
         Speaker speaker = speakerService.promoteToChief(villager);
 
-        // ChiefAttributes persistieren
+                // ChiefAttributes persistieren
         long now = System.currentTimeMillis();
+        BiomeFamily family = BiomeFamily.fromBiomeName(identity.villageBiome());
         ChiefAttributes attrs = new ChiefAttributes(
                 villager.getUniqueId(),
                 speakerId,
@@ -95,7 +102,7 @@ public final class ChiefService {
                 0L,    // mournedAt
                 true,  // isActive
                 null,  // visualTier (wird später von ReputationService gesetzt)
-                null,  // biomeStyle
+                family.name(),  // biomeStyle
                 String.valueOf(villageId.hashCode()), // bannerPattern
                 false, // legendaryUnlocked
                 0L);   // legendaryLastActivated
@@ -271,10 +278,11 @@ public final class ChiefService {
             org.bukkit.inventory.ItemStack banner = new org.bukkit.inventory.ItemStack(bannerMaterial);
             org.bukkit.inventory.meta.BannerMeta meta = (org.bukkit.inventory.meta.BannerMeta) banner.getItemMeta();
             if (meta != null) {
-                String seed = attrs.bannerPattern() != null
+                                String seed = attrs.bannerPattern() != null
                         ? attrs.bannerPattern()
                         : String.valueOf(attrs.villageId().hashCode());
-                for (org.bukkit.block.banner.Pattern pattern : ChiefVisualService.buildBannerPatterns(seed)) {
+                ChiefVisualTier tier = ChiefVisualService.resolveTier(attrs.visualTier());
+                for (org.bukkit.block.banner.Pattern pattern : ChiefVisualService.buildBannerPatterns(seed, tier)) {
                     meta.addPattern(pattern);
                 }
                 meta.displayName(net.kyori.adventure.text.Component.text(
@@ -304,8 +312,58 @@ public final class ChiefService {
                 dropped.setUnlimitedLifetime(true);
                 logger.fine("Heirloom-Banner gedroppt für Chief " + attrs.speakerId()
                         + " an " + villager.getLocation());
-            }
         }
+    }
+
+    // ──────────────────────────────────────────────
+    //  VisualTier
+    // ──────────────────────────────────────────────
+
+    /**
+     * Ermittelt den aktuellen {@link ChiefVisualTier} aus dem kombinierten
+     * Ruf (Dorf + Speaker) und speichert den Wert im {@link ChiefAttributes}-
+     * Record.  Wird von {@link ChiefVisualService} und der Mod-Render-Schicht
+     * verwendet, nicht direkt für das Banner.
+     */
+    public Optional<ChiefAttributes> refreshVisualTier(UUID playerUuid, UUID chiefEntityUuid) {
+        Optional<ChiefAttributes> attrsOpt = chiefRepository.findByEntityUuid(chiefEntityUuid);
+        if (attrsOpt.isEmpty()) {
+                logger.fine("refreshVisualTier: keine ChiefAttributes für " + chiefEntityUuid);
+                return Optional.empty();
+        }
+        ChiefAttributes oldAttrs = attrsOpt.get();
+        if (!oldAttrs.isActive()) {
+                return Optional.of(oldAttrs);
+        }
+
+        int combinedScore = reputationService.getCombinedScore(
+                    playerUuid, oldAttrs.villageId(), oldAttrs.speakerId());
+        ChiefVisualTier tier = ChiefVisualTier.fromReputation(
+                    combinedScore, oldAttrs.legendaryUnlocked());
+
+        if (tier.name().equals(oldAttrs.visualTier())) {
+                return Optional.of(oldAttrs); // kein Update nötig
+        }
+
+        ChiefAttributes updated = new ChiefAttributes(
+                    oldAttrs.entityUuid(),
+                    oldAttrs.speakerId(),
+                    oldAttrs.villageId(),
+                    oldAttrs.crownedAt(),
+                    oldAttrs.mournedAt(),
+                    oldAttrs.isActive(),
+                    tier.name(), // visualTier als Enum-Name-String
+                    oldAttrs.biomeStyle(),
+                    oldAttrs.bannerPattern(),
+                    oldAttrs.legendaryUnlocked(),
+                    oldAttrs.legendaryLastActivated());
+        chiefRepository.save(updated);
+
+        logger.info("VisualTier updated: " + oldAttrs.speakerId()
+                    + " von " + oldAttrs.visualTier() + " auf " + tier.name()
+                    + " (combinedScore=" + combinedScore + ")");
+        return Optional.of(updated);
+    }
 
     
 }

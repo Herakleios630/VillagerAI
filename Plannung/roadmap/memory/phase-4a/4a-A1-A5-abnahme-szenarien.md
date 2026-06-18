@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Abnahme-Szenarien Phase 4a"
 quelle: "roadmap-memory.md → Phase 4a, Abnahme-Szenarien A1–A5"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4a"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Abnahme-Szenarien Phase 4a

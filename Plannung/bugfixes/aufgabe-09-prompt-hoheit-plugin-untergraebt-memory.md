@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Prompt-Hoheit des Plugins untergräbt Memory & Faktenwis
 quelle: "Ad-hoc – Beobachtung beim Testen der Memory-Verkabelung (2025-06-12)"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4a"
 created: "2025-06-12"
-status: done  (Slice 1+2+3 abgeschlossen, Deployment steht aus)
+status: done
 ---
 
 # Arbeitsauftrag: Prompt-Hoheit des Plugins untergräbt Memory & Faktenwissen

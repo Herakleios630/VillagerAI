@@ -2,7 +2,7 @@
 title: "Arbeitsauftrag: Listener und Commands auf Speaker umstellen"
 quelle: "konzept-aufteilung-chief-villager.md → Schritt 11"
 created: "2025-01-16"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Listener und Commands auf Speaker umstellen
