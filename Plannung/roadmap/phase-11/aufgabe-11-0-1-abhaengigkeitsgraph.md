@@ -44,8 +44,12 @@ Entfällt – reine Analyseaufgabe.
 2. Für jede Datei die ausgehenden Abhängigkeiten (welche anderen Projekt-Klassen werden importiert?) notieren
 3. Besonders kritische Abhängigkeiten markieren: Direktaufrufe zwischen Services, die laut Konzept in verschiedenen Modulen landen sollen (z. B. `QuestService` → `ReputationService`)
 4. Zirkuläre Abhängigkeiten identifizieren (A importiert B, B importiert A)
-5. Ergebnis als Tabelle oder Graph in diese Arbeitskarte eintragen (Abschnitt "Ergebnis" unten)
-6. Mit `docs/refactoring-core-modules.md` Abschnitt 1.1/1.2 abgleichen und ggf. Diskrepanzen notieren
+5. Prüfen, ob die geplante Dependency-Richtung (reputation ← quests ← interaction ← village) eingehalten wird:
+   Kein Modul darf Klassen eines Moduls importieren, das von ihm abhängt.
+   Beispiel: Quests-Modul darf KEINE Klassen aus dem Interaction-Modul importieren.
+   Dies ist ein harter Compile-Check, der später von `CorePlugin.topologicalSort()` validiert wird.
+6. Ergebnis als Tabelle oder Graph in diese Arbeitskarte eintragen (Abschnitt "Ergebnis" unten)
+7. Mit `docs/refactoring-core-modules.md` Abschnitt 1.1/1.2 abgleichen und ggf. Diskrepanzen notieren
 
 ## Ergebnis
 <!-- Wird während der Bearbeitung gefüllt -->

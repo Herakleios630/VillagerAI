@@ -24,7 +24,10 @@ Den `CoreEventBus` im Package `core/event/` implementieren – den zentralen Mec
 **Funktionsumfang:**
 - `register(Class<T> eventType, Consumer<T> handler)` – Handler für einen Event-Typ registrieren
 - `unregister(Class<T> eventType, Consumer<T> handler)` – Handler wieder entfernen
-- `post(T event)` – Event an alle registrierten Handler feuern
+- `post(T event)` – Event an alle registrierten Handler feuern (SYNCHRON – alle Listener sofort)
+- `postAsync(T event)` – Event asynchron feuern (dispatch via `aiExecutor` oder separaten Executor)
+- Listener können über Annotation `@Async` oder beim Register angeben, ob sie asynchron laufen wollen
+- Default: synchron (keine Race-Conditions). Quests und Reputation bleiben synchron, Memory/Logging kann async laufen
 - Thread-safe via `ConcurrentHashMap` + `CopyOnWriteArrayList`
 - Keine Abhängigkeit auf Bukkit – reine Core-Infrastruktur
 

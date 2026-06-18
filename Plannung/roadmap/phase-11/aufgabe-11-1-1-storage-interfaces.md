@@ -38,7 +38,11 @@ Alle Storage-Interfaces liegen flach im Package `de.ajsch.villagerai.storage`, z
 ## Notizen / Offene Fragen
 - Die Interfaces sind reine Schnittstellen ohne Implementierungsdetails – daher gefahrlos verschiebbar
 - Import-Anpassungen sind der aufwändigste Teil (~20 Dateien mit geänderten Imports)
-- Nach diesem Slice liegen Interfaces und YAML-Implementierungen in verschiedenen Packages, was 11.1.2 vorbereitet
+"- Nach diesem Slice liegen Interfaces und YAML-Implementierungen in verschiedenen Packages, was 11.1.2 vorbereitet
+- **Caching-Konvention vorbereiten:** Jedes Repository-Interface bekommt optionale Default-Methoden:
+  `getCached(key)` / `invalidateCache(key)`. Yaml-Implementierungen cachen beim ersten Load
+  und invalidieren bei save(). Module bauen spaeter keine eigenen Caches mehr, sondern nutzen
+  diese einheitliche Konvention. Spart Arbeit in spaeteren Phasen und verhindert Performance-Probleme."
 
 ## Fortschritt
 - [ ] Package-Verzeichnis anlegen

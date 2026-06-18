@@ -34,6 +34,17 @@ Ziel ist, dass im späteren Verlauf alle 12 Quest-Handler (TALK, DELIVER, FETCH,
 BUILD, BREED, BREW, VISIT, EXPLORE, SECURE, RETINUE_*, LEGENDARY_*) dieses Interface
 implementieren.
 
+**Vor dem Bau konkreter Handler: Basisklassen definieren (Teil dieser Karte).**
+Diese abstrakten Klassen reduzieren Duplikation in den 12 konkreten Handlern um ~30%:
+- `AbstractCollectionQuestHandler` – für FETCH, DELIVER, GATHER (Item-Check, Inventory-Scan)
+- `AbstractCombatQuestHandler` – für KILL, HUNT (Entity-Death-Matching)
+- `AbstractBuildQuestHandler` – für BUILD, SECURE (Block-Place/Break)
+- `AbstractInteractionQuestHandler` – für TALK, VISIT, EXPLORE (Gesprächs-/Standort-Prüfung)
+
+Jede Basisklasse implementiert das `QuestHandler`-Interface und bietet gemeinsame
+Validierungs- und Fortschritts-Methoden. Konkrete Handler erben nur noch und
+überschreiben die typspezifischen Details.
+
 ## Aktuelles Ergebnis
 - `QuestsModule.java` existiert (11.3.1), kann Handler und Registry instanziieren.
 - Bisherige Quest-Logik liegt unflexibel in `QuestService.java` (900+ Zeilen).
