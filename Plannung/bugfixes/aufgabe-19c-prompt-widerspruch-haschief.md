@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Prompt-Widerspruch – villageHasChief=true aber village
 quelle: "roadmap.md → Phase 10, Aufgabe 05 – Integrationstest"
 related-roadmap: "Plannung/roadmap/phase-10/aufgabe-05-integrationstest-deployment.md"
 created: "2026-06-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Prompt-Widerspruch – villageHasChief=true aber villageEvent "kein Haeuptling"
