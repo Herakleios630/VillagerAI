@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: memory_db.py Hintergrund-Job Archivierung"
 quelle: "roadmap-memory.md → Phase 4d, Aufgabe 4d-2"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4d"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: memory_db.py Hintergrund-Job Archivierung

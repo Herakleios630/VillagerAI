@@ -2,7 +2,7 @@
 title: "Arbeitsauftrag: Prompt-Volltext im Bridge-DEBUG-Log sichtbar machen"
 quelle: "Ad-hoc → Log-Analyse Prompt-Redesign"
 created: "2025-12-18"
-status: in-progress
+status: obsolet
 ---
 
 # Arbeitsauftrag: Prompt-Volltext im Bridge-DEBUG-Log sichtbar machen

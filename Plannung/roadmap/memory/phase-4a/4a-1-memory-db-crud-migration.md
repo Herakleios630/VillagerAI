@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: memory_db.py CRUD & Migration"
 quelle: "roadmap-memory.md → Phase 4a, Aufgabe 4a-1"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4a"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: memory_db.py CRUD & Migration

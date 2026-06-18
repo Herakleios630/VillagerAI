@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Chief-Duplikate durch falsches Grid-Clustering"
 quelle: "Ad-hoc – Beobachtung beim Abnahmetest Phase 4a (12.06.2025)"
 related-roadmap: "Plannung/roadmap.md"
 created: "2025-06-12"
-status: in-progress
+status: obsolet
 ---
 
 # Arbeitsauftrag: Chief-Duplikate durch falsches Grid-Clustering

@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: prompt_builder.py Minecraft-Zeit formatieren"
 quelle: "roadmap-memory.md → Phase 4b, Aufgabe 4b-5"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4b"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: prompt_builder.py Minecraft-Zeit formatieren

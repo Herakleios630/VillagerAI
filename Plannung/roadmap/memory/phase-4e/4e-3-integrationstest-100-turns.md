@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Vollständiger Integrationstest 100 Turns"
 quelle: "roadmap-memory.md → Phase 4e, Aufgabe 4e-3"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4e"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Vollständiger Integrationstest 100 Turns

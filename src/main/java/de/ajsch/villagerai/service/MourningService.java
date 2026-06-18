@@ -322,8 +322,12 @@ public final class MourningService {
             return;
         }
 
-        // Perimeter holen: zuerst Cache, dann aktiv berechnen
-        VillagePerimeter resolved = villagePerimeterService.getCachedPerimeter(villageId).orElse(null);
+        // Perimeter holen: 1) eigener persistenter Cache (überlebt stopMourningParticles),
+        // 2) VillagePerimeterService-Cache, 3) aktiv berechnen
+        VillagePerimeter resolved = particlePerimeters.get(villageId);
+        if (resolved == null) {
+            resolved = villagePerimeterService.getCachedPerimeter(villageId).orElse(null);
+        }
         if (resolved == null) {
             resolved = computePerimeterForVillage(villageId);
         }

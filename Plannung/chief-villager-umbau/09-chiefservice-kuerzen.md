@@ -2,7 +2,7 @@
 title: "Arbeitsauftrag: ChiefService massiv kürzen + mournChief()"
 quelle: "konzept-aufteilung-chief-villager.md → Schritt 9"
 created: "2025-01-16"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: ChiefService massiv kürzen + mournChief()

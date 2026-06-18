@@ -15,6 +15,7 @@ import de.ajsch.villagerai.listener.VillagerTradeListener;
 import de.ajsch.villagerai.listener.VillagerInteractListener;
 import de.ajsch.villagerai.service.ChiefAutoAssignmentService;
 import de.ajsch.villagerai.service.ChiefMeetingObserver;
+import de.ajsch.villagerai.service.LegendaryUnlockService;
 import de.ajsch.villagerai.service.MourningService;
 import de.ajsch.villagerai.service.ChiefService;
 import de.ajsch.villagerai.service.SpeakerService;
@@ -56,6 +57,9 @@ import de.ajsch.villagerai.storage.YamlReputationRepository;
 import de.ajsch.villagerai.storage.YamlVillagerTradeRepository;
 import de.ajsch.villagerai.storage.YamlVillageRepository;
 import de.ajsch.villagerai.util.Keys;
+import de.ajsch.villagerai.model.Quest;
+import de.ajsch.villagerai.model.QuestStatus;
+import de.ajsch.villagerai.model.QuestType;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -66,14 +70,18 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bukkit.Bukkit;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.entity.Player;
+import org.bukkit.entity.Entity;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.PluginManager;
@@ -174,7 +182,7 @@ public final class VillageChiefPlugin extends JavaPlugin {
         // Enable debug logging to diagnose dark-block detection issues
         this.darkBlockCache.setDebugLogging(dataLoader.debugDarkBlockScanLogging());
         this.lightLevelScanner.setDebugLogging(dataLoader.debugDarkBlockScanLogging());
-        this.chiefVisualService = new ChiefVisualService(this, chiefRepository, getLogger());
+        this.chiefVisualService = new ChiefVisualService(this, chiefRepository, speakerRepository, getLogger());
                 this.reputationService = new ReputationService(reputationRepository);
         this.reputationService.setLogger(getLogger());
         // MourningService ohne ChiefService erzeugen (entkoppelt via Setter)
@@ -187,13 +195,14 @@ public final class VillageChiefPlugin extends JavaPlugin {
                 getLogger());
         this.villageIdentityService.setChiefRepository(chiefRepository);
         this.villageIdentityService.setMourningService(mourningService);
-        this.chiefService = new ChiefService(
+                this.chiefService = new ChiefService(
             keys,
             chiefRepository,
             villageIdentityService,
             chiefVisualService,
             speakerService,
             mourningService,
+            reputationService,
             getLogger());
         // Nachträgliche Verdrahtung: MourningService bekommt ChiefService per Setter
         this.mourningService.setChiefService(chiefService);
@@ -211,16 +220,18 @@ public final class VillageChiefPlugin extends JavaPlugin {
         this.questDifficultyService = new QuestDifficultyService(
             questDifficultyPreferenceRepository,
             dataLoader.loadQuestDifficultySettings());
-        this.questOfferService = new QuestOfferService(
-            getLogger(),
-            questService,
-            questDifficultyService,
-            dataLoader.loadQuestOfferTemplatesSection(),
-            villageIdentityService,
-            villagePerimeterService,
-            darkBlockCache,
-            dataLoader.questsSecureSubAreaSize(),
-            dataLoader.questsSecureMinDarkBlocks());
+                this.questOfferService = new QuestOfferService(
+                            getLogger(),
+                            questService,
+                            questDifficultyService,
+                            dataLoader.loadQuestOfferTemplatesSection(),
+                            villageIdentityService,
+                            villagePerimeterService,
+                            darkBlockCache,
+                            chiefRepository,
+                            reputationService,
+                            dataLoader.questsSecureSubAreaSize(),
+                            dataLoader.questsSecureMinDarkBlocks());
                 this.questGiverLocatorService = new QuestGiverLocatorService(speakerService);
         this.questRewardService = new QuestRewardService(
             dataLoader.loadQuestRewardDefinitions(),
@@ -279,7 +290,7 @@ public final class VillageChiefPlugin extends JavaPlugin {
             getConfig().getLong("conversation.check-interval-seconds", 15L),
             conversationSettings.maxConcurrentRequests(),
             conversationSettings.waitingMessage(),
-            conversationSettings.npcBusyMessage(),
+            conversationSettings.chiefBusyMessage(),
             conversationSettings.queueFullMessage(),
             conversationSettings.spontaneousQuestOfferChance(),
             conversationSettings.spontaneousQuestOfferCooldownSeconds(),
@@ -305,6 +316,11 @@ public final class VillageChiefPlugin extends JavaPlugin {
         this.chiefAutoAssignmentService = new ChiefAutoAssignmentService(
                 chiefService, chiefRepository, villageIdentityService, mourningService, chiefMeetingObserver, getLogger());
         getServer().getPluginManager().registerEvents(chiefAutoAssignmentService, this);
+
+                LegendaryUnlockService legendaryUnlockService = new LegendaryUnlockService(
+                chiefVisualService, chiefService, chiefRepository, reputationService, getLogger());
+        getServer().getPluginManager().registerEvents(legendaryUnlockService, this);
+
         // Alte PDC-Werte bereinigen, bevor Chiefs zugewiesen werden
         villageIdentityService.purgeAllStalePdc();
         chiefAutoAssignmentService.initialScan();
@@ -315,9 +331,12 @@ public final class VillageChiefPlugin extends JavaPlugin {
         registerListeners();
                 registerCommands();
 
-        // Villager-AI-Recovery: alle 30 Sekunden eingefrorene Villager wiederbeleben
+                // Villager-AI-Recovery: alle 30 Sekunden eingefrorene Villager wiederbeleben
         this.villagerRecoveryTask = Bukkit.getScheduler().runTaskTimer(this,
             () -> conversationService.recoverAllVillagers(), 20L, 600L);
+
+        // RETINUE_GUARD-Timer: alle 60 Sekunden prüfen, ob Spieler in der Nähe des Chiefs sind
+        Bukkit.getScheduler().runTaskTimer(this, () -> advanceRetinueGuardQuests(), 20L, 1200L);
 
         getLogger().info("VillagerAI enabled using AI provider: " + aiService.getName());
         getLogger().info("Quest service ready with repository: " + questRepository.getClass().getSimpleName());
@@ -393,6 +412,9 @@ public final class VillageChiefPlugin extends JavaPlugin {
         pluginManager.registerEvents(new VillagerInteractListener(
                 speakerService,
                 conversationService,
+                chiefService,
+                reputationService,
+                villageIdentityService,
                 getConfig().getBoolean("interaction.allow-regular-villager-conversations", true),
                 getConfig().getBoolean("interaction.regular-villager-conversations-require-sneak", true)), this);
         pluginManager.registerEvents(new PlayerChatListener(conversationService), this);
@@ -507,6 +529,36 @@ public final class VillageChiefPlugin extends JavaPlugin {
 
     public ChatDebugLevel getChatDebugLevel() {
         return chatDebugLevel;
+    }
+
+    private void advanceRetinueGuardQuests() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            Collection<Quest> retinueGuardQuests = new ArrayList<>();
+            for (Quest quest : questService.findPlayerQuests(player.getUniqueId())) {
+                if (quest.type() == QuestType.RETINUE_GUARD && quest.status() == QuestStatus.ACTIVE) {
+                    retinueGuardQuests.add(quest);
+                }
+            }
+            for (Quest quest : retinueGuardQuests) {
+                // targetKey: RETINUE_GUARD:chiefEntityUuid:durationMinutes
+                String[] parts = quest.targetKey().split(":");
+                if (parts.length < 3) continue;
+                UUID chiefEntityUuid;
+                try {
+                    chiefEntityUuid = UUID.fromString(parts[1]);
+                } catch (IllegalArgumentException e) {
+                    continue;
+                }
+                org.bukkit.entity.Entity entity = Bukkit.getEntity(chiefEntityUuid);
+                if (entity == null) continue;
+                boolean nearby = entity.getLocation().getWorld().equals(player.getWorld())
+                        && entity.getLocation().distanceSquared(player.getLocation()) <= 32.0 * 32.0;
+                if (nearby) {
+                    questService.advanceRetinueGuardQuests(player, chiefEntityUuid);
+                    questUiService.refresh(player);
+                }
+            }
+        }
     }
 
     public void setChatDebugLevel(ChatDebugLevel level) {

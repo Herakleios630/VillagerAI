@@ -67,7 +67,7 @@ public final class YamlChiefRepository implements ChiefRepository {
     @Override
     public void save(ChiefAttributes attributes) {
         synchronized (lock) {
-            String path = "chief-attributes." + attributes.entityUuid();
+            String path = "chiefs." + attributes.entityUuid();
             configuration.set(path + ".entity-uuid", attributes.entityUuid().toString());
             configuration.set(path + ".chief-id", attributes.speakerId());
             configuration.set(path + ".village-id", attributes.villageId());
@@ -86,13 +86,13 @@ public final class YamlChiefRepository implements ChiefRepository {
     @Override
     public void deleteByEntityUuid(UUID entityUuid) {
         synchronized (lock) {
-            configuration.set("chief-attributes." + entityUuid, null);
+            configuration.set("chiefs." + entityUuid, null);
             saveConfiguration();
         }
     }
 
     private Optional<ChiefAttributes> readAttributes(String entityUuid) {
-        ConfigurationSection section = configuration.getConfigurationSection("chief-attributes." + entityUuid);
+        ConfigurationSection section = configuration.getConfigurationSection("chiefs." + entityUuid);
         if (section == null) {
             return Optional.empty();
         }

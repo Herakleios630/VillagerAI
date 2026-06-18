@@ -443,7 +443,7 @@ public final class ChiefCommand implements TabExecutor {
         }
         conversationService.getConversation(player.getUniqueId()).ifPresentOrElse(snapshot -> {
             sender.sendMessage(Component.text("Aktives Gespraech: ja", NamedTextColor.WHITE));
-            sender.sendMessage(Component.text("Chief-ID: " + snapshot.speakerId(), NamedTextColor.WHITE));
+            sender.sendMessage(Component.text("Chief-ID: " + snapshot.chiefId(), NamedTextColor.WHITE));
             sender.sendMessage(Component.text("Village-ID: " + snapshot.villageId(), NamedTextColor.WHITE));
             sender.sendMessage(Component.text("Idle-Sekunden: " + snapshot.idleSeconds(), NamedTextColor.WHITE));
         }, () -> sender.sendMessage(Component.text("Aktives Gespraech: nein", NamedTextColor.WHITE)));

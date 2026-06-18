@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: BiomeStyle-Mapping – Farb- und Materialwelt pro Biom-F
 quelle: "roadmap.md → Chief_V2, Phase D (Punkt 1)"
 related-roadmap: "Plannung/roadmap.md"
 created: "2025-07-20"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: BiomeStyle-Mapping

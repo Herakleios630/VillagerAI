@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Logger;
 import org.bukkit.Location;
 import org.bukkit.block.Biome;
@@ -28,6 +30,7 @@ public final class VillageIdentityService {
     private volatile ChiefRepository chiefRepository;
     private volatile Logger logger;
     private volatile MourningService mourningService;
+    private final ConcurrentMap<String, Integer> populationCache = new ConcurrentHashMap<>();
 
     public VillageIdentityService(Keys keys) {
         this.keys = keys;
@@ -96,6 +99,13 @@ public final class VillageIdentityService {
 
     /** Ermittelt eine stabile villageId per PDC, Repository oder Neuregistrierung. */
     public String resolveOrRegisterVillageId(Villager villager) {
+        if (villager == null) {
+            if (logger != null) {
+                logger.warning("[VillageIdentity] resolveOrRegisterVillageId() mit null villager aufgerufen – gebe null zurueck");
+            }
+            return null;
+        }
+
         // 1. PDC-Check – bereits gespeichert? Nur gueltig wenn Repository
         //    den Eintrag noch kennt (verhindert Zombie-IDs nach villages.yml-Löschung)
         String pdcId = villager.getPersistentDataContainer().get(keys.villageIdKey(), PersistentDataType.STRING);
@@ -192,14 +202,16 @@ public final class VillageIdentityService {
         } else {
             villageName = buildVillageName(anchor);
         }
+        int population = estimateVillagePopulation(villager, anchor);
+        populationCache.put(villageId, population);
         return new VillageIdentity(
                 villageId,
                 villageName,
                 buildVillageDescription(anchor, villageName),
                 buildVillageAttributes(villager, anchor),
                 formatBiome(anchor.getBlock().getBiome()),
-                estimateVillagePopulation(villager, anchor),
-                buildVillageEventSummary(villager, anchor));
+                population,
+                buildVillageEventSummary(villageId, anchor));
     }
 
     public Location resolveAnchor(Villager villager) {
@@ -289,6 +301,48 @@ public final class VillageIdentityService {
                 location.getBlockZ());
     }
 
+    
+    /**
+     * Löst eine VillageIdentity nur anhand der villageId auf (ohne Villager-Entity).
+     * Nützlich wenn wir nur einen Speaker mit villageId haben, aber keinen Villager.
+     */
+    public VillageIdentity resolveByVillageId(String villageId) {
+        VillageRecord record = (villageRepository != null)
+                ? villageRepository.findByVillageId(villageId).orElse(null)
+                : null;
+        if (record != null) {
+            // Versuche einen Registry-Anchor zu finden
+            String worldName = record.knownAnchors().isEmpty()
+                    ? "world"
+                    : record.knownAnchors().get(0).world();
+            org.bukkit.Location anchor = record.knownAnchors().isEmpty()
+                    ? new org.bukkit.Location(org.bukkit.Bukkit.getWorld(worldName), 0, 64, 0)
+                    : new org.bukkit.Location(org.bukkit.Bukkit.getWorld(record.knownAnchors().get(0).world()), record.knownAnchors().get(0).x(), record.knownAnchors().get(0).y(), record.knownAnchors().get(0).z());
+            if (anchor == null || anchor.getWorld() == null) {
+                anchor = new org.bukkit.Location(
+                        org.bukkit.Bukkit.getWorlds().get(0), 0, 64, 0);
+            }
+            int population = populationCache.getOrDefault(villageId, 1);
+            return new VillageIdentity(
+                    villageId,
+                    record.villageName(),
+                    buildVillageDescription(anchor, record.villageName()),
+                    buildVillageAttributes(null, anchor),
+                    formatBiome(anchor.getBlock().getBiome()),
+                    population,
+                    buildVillageEventSummary(villageId, anchor));
+        }
+        // Fallback: generische Identity
+        return new VillageIdentity(
+                villageId,
+                "Unbekanntes Dorf",
+                "Ein Dorf, über das wenig bekannt ist.",
+                "keine groben Dorfmerkmale bekannt",
+                "PLAINS",
+                1,
+                "kein wichtiges Dorfereignis bekannt");
+    }
+
     private String buildVillageName(Location anchor) {
         String prefix = resolvePrefix(anchor.getBlock().getBiome());
         String suffix = resolveSuffix(anchor);
@@ -368,15 +422,17 @@ public final class VillageIdentityService {
             attributes.add("raues Klima");
         }
 
-        if (hasWorld(villager.getMemory(MemoryKey.MEETING_POINT))) {
-            attributes.add("klarer Dorfmittelpunkt");
-        }
-        if (hasWorld(villager.getMemory(MemoryKey.HOME))) {
-            attributes.add("erkennbare Wohnhaeuser");
-        }
-        if (hasWorld(villager.getMemory(MemoryKey.JOB_SITE))
-                || hasWorld(villager.getMemory(MemoryKey.POTENTIAL_JOB_SITE))) {
-            attributes.add("feste Arbeitsorte");
+        if (villager != null) {
+            if (hasWorld(villager.getMemory(MemoryKey.MEETING_POINT))) {
+                attributes.add("klarer Dorfmittelpunkt");
+            }
+            if (hasWorld(villager.getMemory(MemoryKey.HOME))) {
+                attributes.add("erkennbare Wohnhaeuser");
+            }
+            if (hasWorld(villager.getMemory(MemoryKey.JOB_SITE))
+                    || hasWorld(villager.getMemory(MemoryKey.POTENTIAL_JOB_SITE))) {
+                attributes.add("feste Arbeitsorte");
+            }
         }
 
         if (attributes.isEmpty()) {
@@ -408,9 +464,8 @@ public final class VillageIdentityService {
         return Math.max(1, population);
     }
 
-    private String buildVillageEventSummary(Villager villager, Location anchor) {
+    private String buildVillageEventSummary(String villageId, Location anchor) {
         // Trauerzustand hat Vorrang vor Wetter/Tageszeit
-        String villageId = resolveOrRegisterVillageId(villager);
         if (villageId == null) {
             villageId = "unregistered";
         }
@@ -436,12 +491,6 @@ public final class VillageIdentityService {
         long time = anchor.getWorld().getTime();
         if (time >= 12300L && time < 23850L) {
             return "Es ist Nacht, und das Dorf wirkt vorsichtig und zurueckgezogen." + chiefStatus;
-        }
-        if (hasWorld(villager.getMemory(MemoryKey.JOB_SITE)) || hasWorld(villager.getMemory(MemoryKey.POTENTIAL_JOB_SITE))) {
-            return "Es ist ein ruhiger Arbeitstag, und die Dorfbewohner gehen ihren ueblichen Aufgaben nach." + chiefStatus;
-        }
-        if (hasWorld(villager.getMemory(MemoryKey.MEETING_POINT))) {
-            return "Im Dorf ist gerade ein ruhiger, geordneter Alltag ohne auffaellige Zwischenfaelle spuerbar." + chiefStatus;
         }
         return "Im Dorf gibt es aktuell kein herausstechendes Ereignis; alles wirkt eher ruhig und gewoehnlich." + chiefStatus;
     }

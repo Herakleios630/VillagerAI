@@ -2,7 +2,7 @@
 title: "Bug: '[Villager] Der None ...' – Berufsname 'None' in Todes-Log"
 quelle: "ad-hoc – Log-Beobachtung"
 created: "2025-07-20"
-status: todo
+status: obsolet
 ---
 
 # Bug: „Der None Bela ist von einem player erschlagen worden"

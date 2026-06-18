@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Ground-Truth-Block + Sektions-Reihenfolge"
 quelle: "Ad-hoc -> Prompt-Konzept Karte 1"
 related-roadmap: "Plannung/prompt-redesign/konzept.md"
 created: "2025-12-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Ground-Truth-Block + Sektions-Reihenfolge

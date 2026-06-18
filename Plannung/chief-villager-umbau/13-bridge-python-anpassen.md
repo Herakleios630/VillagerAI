@@ -78,4 +78,12 @@ SCP der geänderten Python-Dateien auf den Server:
 - `scp "chief-ai-service\chief_ai_service\prompt_builder.py" mc@10.0.0.86:"/opt/villagerai/chief-ai-service/chief_ai_service/prompt_builder.py"`
 - `scp "chief-ai-service\chief_ai_service\reply_builder.py" mc@10.0.0.86:"/opt/villagerai/chief-ai-service/chief_ai_service/reply_builder.py"`
 - `scp "chief-ai-service\chief_ai_service\summary_client.py" mc@10.0.0.86:"/opt/villagerai/chief-ai-service/chief_ai_service/summary_client.py"`
-- `ssh mc@10.0.0.86 "sudo systemctl restart villagerai-chief"`
+"- `ssh mc@10.0.0.86 \"sudo systemctl restart villagerai-chief\"`
+
+## Notizen (Cluster-F Inventur 2025-07-21)
+
+**Status zurückgesetzt von done → in-progress.** Die Bridge (`http_app.py`, `reply_builder.py`) verwendet weiterhin `payload.get(\"chiefName\", \"Haeuptling\")` statt des neuen `displayName`-Felds, das das Plugin nach dem Speaker-Refactoring sendet. Bug 17 (`aufgabe-17-factsworker-list-error-und-memory-speaker-fix.md`) hat den Fix implementiert (`chiefName`→`displayName` an 3 Stellen), aber noch nicht deployed.
+
+**Was fehlt:** Konsistente Feldnamen zwischen Plugin und Bridge sicherstellen. Mapping-Tabelle erstellen, alle Bridge-Stellen auf neue Feldnamen umstellen, deployen.
+
+**Zugeordnet zu Cluster C (Bridge-Mapping).**"

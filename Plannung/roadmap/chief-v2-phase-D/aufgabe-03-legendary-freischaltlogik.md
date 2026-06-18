@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Legendary-Freischaltlogik – Dorf- und Villager-Ruf 100
 quelle: "roadmap.md → Chief_V2, Phase D (Punkt 3)"
 related-roadmap: "Plannung/roadmap.md"
 created: "2025-07-20"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Legendary-Freischaltlogik

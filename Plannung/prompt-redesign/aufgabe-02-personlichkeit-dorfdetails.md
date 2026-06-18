@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Personlichkeit + Dorf-Details mit neuen Feldern"
 quelle: "Ad-hoc -> Prompt-Konzept Karte 2"
 related-roadmap: "Plannung/prompt-redesign/konzept.md"
 created: "2025-12-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Personlichkeit + Dorf-Details mit neuen Feldern

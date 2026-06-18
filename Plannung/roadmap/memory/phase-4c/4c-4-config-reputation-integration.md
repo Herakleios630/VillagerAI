@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: config.json memory.reputation_integration Sektion"
 quelle: "roadmap-memory.md → Phase 4c, Aufgabe 4c-4"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4c"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: config.json memory.reputation_integration Sektion

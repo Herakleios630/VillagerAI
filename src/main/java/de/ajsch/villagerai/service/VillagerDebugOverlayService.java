@@ -167,7 +167,7 @@ public final class VillagerDebugOverlayService {
                 : activeQuest.type() + " " + activeQuest.progress() + "/" + activeQuest.goal()
                         + (questMatchesTarget ? " *" : "");
         boolean inConversation = conversationService.getConversation(player.getUniqueId())
-            .map(snapshot -> snapshot.speakerId().equals(speaker.speakerId()))
+            .map(snapshot -> snapshot.chiefId().equals(speaker.speakerId()))
             .orElse(false);
         String healthSummary = Math.round(villagerContext.currentHealth()) + "/" + Math.round(villagerContext.maxHealth());
         int villageReputationScore = reputationService.getVillageScore(player.getUniqueId(), villageIdentity.villageId());

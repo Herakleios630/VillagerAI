@@ -2,7 +2,7 @@
 title: "Arbeitsauftrag: Fixes für unspezifische Chief-Antworten trotz Memory-Daten"
 quelle: "aufgabe-11-seltsame-antworten.md – Analyseergebnisse"
 created: "2025-06-13"
-status: ready
+status: done
 ---
 
 # Arbeitsauftrag: Fixes für unspezifische Chief-Antworten

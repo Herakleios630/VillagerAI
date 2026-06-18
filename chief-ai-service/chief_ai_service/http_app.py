@@ -39,7 +39,7 @@ def _store_turns_background(payload: dict, reply_text: str) -> None:
         from .embedding_client import get_embedding, pack_embedding
 
         player_uuid = str(payload.get("playerUuid", ""))
-        chief_name = str(payload.get("chiefName", "Haeuptling"))
+        chief_name = str(payload.get("displayName", "Dorfbewohner"))
         player_message = str(payload.get("playerMessage", ""))
         mc_day = int(payload.get("mcDay", 0))
         mc_time = int(payload.get("mcTime", 0))
@@ -151,7 +151,7 @@ def _store_turns_background(payload: dict, reply_text: str) -> None:
         logger.info("_store_turns_background done ts=%s player_uuid=%s chief_name=%s", _ts_utc(), player_uuid, chief_name)
 
     except Exception as _e:
-        logger.error("Error storing turns for %s/%s: %s", payload.get("playerUuid", "?"), payload.get("chiefName", "?"), _e)
+        logger.error("Error storing turns for %s/%s: %s", payload.get("playerUuid", "?"), payload.get("displayName", "?"), _e)
 
 
 def _trigger_summary_if_needed(player_uuid: str, chief_name: str) -> None:

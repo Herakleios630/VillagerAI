@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Developer-Guide & Handover um Memory-System ergänzen"
 quelle: "roadmap-memory.md → Phase 4e, Aufgabe 4e-2"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4e"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Developer-Guide & Handover um Memory-System ergänzen

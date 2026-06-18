@@ -2,7 +2,7 @@
 title: "Arbeitsauftrag: Trigger-Phrasen-Whitespace bereinigen"
 quelle: "Ad-hoc → Log-Analyse Prompt-Redesign"
 created: "2025-12-18"
-status: in-progress
+status: obsolet
 ---
 
 # Arbeitsauftrag: Trigger-Phrasen-Whitespace bereinigen

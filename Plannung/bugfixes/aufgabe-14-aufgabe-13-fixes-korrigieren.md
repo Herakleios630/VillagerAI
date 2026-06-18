@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Aufgabe-13-Logging-Korrekturen (Regressionen beheben)"
 quelle: "Ad-hoc – Review der Umsetzung von aufgabe-13 durch externe KI"
 related-roadmap: "-"
 created: "2025-07-21"
-status: ready
+status: done
 ---
 
 # Arbeitsauftrag: Aufgabe-13-Logging-Korrekturen

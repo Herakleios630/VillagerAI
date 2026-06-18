@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: Gefolge-Quests – neue Quest-Kategorie"
 quelle: "roadmap.md → Chief_V2, Phase D (Punkt 5)"
 related-roadmap: "Plannung/roadmap.md"
 created: "2025-07-20"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: Gefolge-Quests – neue Quest-Kategorie

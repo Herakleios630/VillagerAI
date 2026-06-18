@@ -3,7 +3,7 @@ title: "Arbeitsauftrag: prompt_builder.py archivierte Turns ignorieren"
 quelle: "roadmap-memory.md → Phase 4d, Aufgabe 4d-3"
 related-roadmap: "Plannung/roadmap-memory.md#phase-4d"
 created: "2025-07-18"
-status: in-progress
+status: done
 ---
 
 # Arbeitsauftrag: prompt_builder.py archivierte Turns ignorieren
