@@ -34,7 +34,7 @@ public final class YamlChiefRepository implements ChiefRepository {
     @Override
     public Optional<ChiefAttributes> findActiveByVillageId(String villageId) {
         synchronized (lock) {
-            ConfigurationSection section = configuration.getConfigurationSection("chief-attributes");
+            ConfigurationSection section = configuration.getConfigurationSection("chiefs");
             if (section == null) {
                 return Optional.empty();
             }
@@ -51,7 +51,7 @@ public final class YamlChiefRepository implements ChiefRepository {
     @Override
     public List<ChiefAttributes> findAll() {
         synchronized (lock) {
-            ConfigurationSection section = configuration.getConfigurationSection("chief-attributes");
+            ConfigurationSection section = configuration.getConfigurationSection("chiefs");
             if (section == null) {
                 return List.of();
             }

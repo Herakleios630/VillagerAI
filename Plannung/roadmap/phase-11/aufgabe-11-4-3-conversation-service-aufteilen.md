@@ -3,7 +3,9 @@ title: "Arbeitsauftrag: ConversationService aufteilen"
 quelle: "roadmap.md → Phase 11.4, Aufgabe 11.4.3"
 related-roadmap: "roadmap.md → Phase 11.4"
 created: "2025-07-14"
-status: open
+"status: replaced"
+
+replaced_by: "11.4.3a, 11.4.3b, 11.4.3c""
 ---
 
 # Arbeitsauftrag: 11.4.3 – ConversationService aufteilen

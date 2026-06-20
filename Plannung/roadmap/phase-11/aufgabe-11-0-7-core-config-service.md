@@ -25,6 +25,10 @@ Eine neue Klasse `CoreConfigService.java` im Package `core/config/` erstellen, d
 - `CoreConfigService` als Wrapper um den bestehenden `PluginDataLoader` (oder direkten Zugriff auf `config.yml`)
 - `getModuleConfig(String moduleId)` → `ConfigurationSection` (z. B. `modules.quests`)
 - `isModuleEnabled(String moduleId)` → `boolean` (liest `modules.<id>.enabled`)
+- `registerValidator(String moduleId, ConfigSchema schema)` – generische Validierungs-Infrastruktur
+  Jedes Modul registriert sein Config-Schema beim Core. Validierung läuft einmal beim Startup
+  und bei `/chief reload`. Die quest-spezifische Validator-Logik aus Aufgabe 11-3-11 wird dadurch
+  schlanker, weil die generische Infrastruktur bereits im Core bereitsteht.
 - Fallback: Wenn `modules:`-Sektion nicht existiert → alle Module gelten als disabled (safer Start)
 - Keine Änderung an bestehender `PluginDataLoader` – die bleibt vorerst unverändert
 

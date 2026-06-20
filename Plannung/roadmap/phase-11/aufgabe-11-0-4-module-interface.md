@@ -25,6 +25,19 @@ Drei neue Java-Interfaces und -Klassen im neuen Package `core/` definieren, die 
 2. **`ModuleContext.java`** – Interface, das jedem Modul beim Start übergeben wird und Zugriff auf alle Core-Services gibt (Plugin, Logger, EventBus, ConfigService, CommandRegistry, AIService, alle Storage-Repos, World-Services)
 3. **`CommandRegistry.java`** – Klasse, die SubCommands registriert und auflöst (für die spätere Aufteilung von ChiefCommand)
 
+**Wichtig – God-Object-Gefahr:** Der `ModuleContext` gibt Modulen Zugriff auf ALLE Core-Services
+(einschliesslich Repository-Interfaces fuer andere Module). Das ist als Bootstrapping-Mechanismus
+in Phase 0 notwendig, birgt aber die Gefahr von unkontrollierten Cross-Modul-Zugriffen spaeter.
+
+**Spaetere Verfeinerung (nach Modul-Extraktion, nicht Teil dieser Karte):**
+Pro Modul ein schlankes Interface einfuehren:
+- `QuestModuleContext` nur mit `QuestRepository`, `EventBus`, `ConfigSection`
+- `ReputationModuleContext` nur mit `ReputationRepository`, `EventBus`
+- `InteractionModuleContext` nur mit `SpeakerRepository`, `ConversationHistoryRepository`, `EventBus`
+- `VillageModuleContext` nur mit `VillageRepository`, `EventBus`, `WorldScannerService`
+
+Das verhindert, dass das Quests-Modul versehentlich den `SpeakerService` importiert.
+
 Die Interfaces MÜSSEN:
 - Im neuen Package `de.ajsch.villagerai.core` liegen
 - Genau der Signatur aus `docs/refactoring-core-modules.md` Abschnitt 3 und 2 entsprechen

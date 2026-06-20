@@ -19,7 +19,14 @@ Die drei World-Services liegen im Package `de.ajsch.villagerai.service`, vermisc
 - `src/main/java/de/ajsch/villagerai/core/world/WorldScannerService.java` – Interface
 - `src/main/java/de/ajsch/villagerai/core/world/ParticleMarkerService.java` – zeitlich begrenzte Partikel-Effekte
 
-**WorldScannerService Interface – Vorschlag:**
+**WorldScannerService Interface – Vorschlag (SCHWERPUNKT):**
+`WorldScannerService` ist die zentrale Scan-Engine des Cores und einer der groessten
+Architektur-Wins dieser Phase. Module fragen nur `scanPerimeter(world, min, max)` an
+und erhalten ein `AreaScanResult` – sie wissen nichts ueber `DarkBlockCache` oder
+`LightLevelScanner`-Interna. Beide Implementierungen bleiben package-private.
+Die vereinheitlichte API ermoeglicht spaeter, den Scan-Mechanismus auszutauschen
+(z.B. SQLite-gecachte Scans), ohne dass Module es merken.
+
 ```java
 public interface WorldScannerService {
     AreaScanResult scanArea(World world, int minX, int minZ, int maxX, int maxZ);

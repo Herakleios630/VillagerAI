@@ -59,7 +59,16 @@ Entfällt – reine Implementierungsaufgabe.
    - `disableAll()` in umgekehrter Reihenfolge
 3. Automatische Feature-Flag-Prüfung: Modul nur starten, wenn `config.modules.<id>.enabled == true`
 4. Build mit `.\gradlew.bat compileJava` – MUSS kompilieren
-5. Kein Deployment nötig – CorePlugin wird noch nicht als Main-Class verwendet
+5. "5. **api/model vs. modul-interne model/ – klare Regeln definieren (spätere Umsetzung, hier nur Spezifikation):**
+   - `api/model/`: öffentliche, stabile Klassen – werden über EventBus versendet ODER von mehreren Modulen importiert.
+     Änderungen an diesen Klassen sind Breaking Changes für externe Plugins.
+   - `modules/<name>/model/`: modul-interne Klassen – nur innerhalb des Moduls genutzt, können sich jederzeit ändern.
+   - Entscheidungskriterium: Wird die Klasse von einem EventBus-Event referenziert? → `api/model/`.
+     Wird sie nur modul-intern genutzt? → `modules/<name>/model/`.
+   - Beispiele: `Quest`, `QuestStatus`, `QuestType`, `Speaker`, `VillageRecord` → `api/model/`.
+     `QuestProgressDetails`, `QuestOfferContext` → `modules/quests/model/`.
+   Diese Trennung wird bei jedem Modul-Slice durchgesetzt und schützt die API-Stabilität.
+6. Kein Deployment nötig – CorePlugin wird noch nicht als Main-Class verwendet"
 
 ## Technische Randbedingungen (wiederverwendbar)
 - **YAML-Edit:** Niemals `filesystem_write_file` – nur `filesystem_edit_file` (oldText/newText)

@@ -3,7 +3,9 @@ title: "Arbeitsauftrag: QuestService aufteilen in QuestCrudService + QuestProgre
 quelle: "roadmap.md → Phase 11.3, Aufgabe 11.3.4"
 related-roadmap: "roadmap.md → Phase 11.3"
 created: "2025-07-14"
-status: in-progress
+"status: replaced"
+
+replaced_by: "11.3.4a, 11.3.4b""
 ---
 
 # Arbeitsauftrag: 11.3.4 – QuestService aufteilen in QuestCrudService + QuestProgressService
